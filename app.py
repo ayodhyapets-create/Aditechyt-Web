@@ -4,12 +4,11 @@ import os
 import glob
 import threading
 import time
+import imageio_ffmpeg
 
 app = Flask(__name__)
 
-# ADITECHYT V5.2 - UPDATED
-# Port 9000 + Preview + Qualities + How To Use + Success Popup
-
+# ADITECHYT V5.4 - FINAL STABLE CODE (PORT 9500 + PREVIEW + QUALITIES + FFMPEG FIX)
 HTML_PAGE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -1328,7 +1327,8 @@ def preview():
 
         ydl_opts = {
             'quiet': True,
-            'noplaylist': True
+            'noplaylist': True,
+            'nocheckcertificate': True
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -1435,7 +1435,9 @@ def download():
         'outtmpl':
             f'{temp_dir}/%(title)s.%(ext)s',
 
-        'noplaylist': True
+        'noplaylist': True,
+        'nocheckcertificate': True,
+        'ffmpeg_location': imageio_ffmpeg.get_ffmpeg_exe()
 
     }
 
@@ -1654,7 +1656,7 @@ if __name__ == '__main__':
 
         host='0.0.0.0',
 
-        port=9700,
+        port=9500,
 
         debug=False
 
