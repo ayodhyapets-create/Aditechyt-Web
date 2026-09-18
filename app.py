@@ -5,10 +5,12 @@ import glob
 import threading
 import time
 import imageio_ffmpeg
+import requests
+import random
 
 app = Flask(__name__)
 
-# ADITECHYT V5.5 - FINAL STABLE CODE (PORT 9500 + PREVIEW + QUALITIES + USER-AGENT + FFMPEG FIX)
+# ADITECHYT V6.0 - FINAL STABLE CODE WITH AUTO-PROXY (PORT 9500)
 HTML_PAGE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -1279,6 +1281,38 @@ HTML_PAGE = """
 
 
 # --------------------------------------------------
+# AUTO PROXY FUNCTION
+# --------------------------------------------------
+
+def get_working_proxy():
+    api_url = "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=5000&country=US,GB,CA,IN"
+    
+    try:
+        response = requests.get(api_url, timeout=5)
+        proxies = response.text.strip().split('\r\n')
+        random.shuffle(proxies)
+        
+        # Test up to 5 proxies
+        for proxy in proxies[:5]:
+            if not proxy:
+                continue
+            proxy_url = f"http://{proxy}"
+            test_proxies = {"http": proxy_url, "https": proxy_url}
+            try:
+                test = requests.get("https://www.youtube.com", proxies=test_proxies, timeout=3)
+                if test.status_code == 200:
+                    print(f"✅ Working Proxy Found: {proxy_url}")
+                    return proxy_url
+            except Exception:
+                continue
+    except Exception as e:
+        print(f"Proxy fetch error: {e}")
+        pass
+    
+    return None
+
+
+# --------------------------------------------------
 # DELETE FILE AFTER 5 MINUTES
 # --------------------------------------------------
 
@@ -1325,12 +1359,17 @@ def preview():
 
     try:
 
+        live_proxy = get_working_proxy()
+
         ydl_opts = {
             'quiet': True,
             'noplaylist': True,
             'nocheckcertificate': True,
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
         }
+
+        if live_proxy:
+            ydl_opts['proxy'] = live_proxy
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
 
@@ -1370,8 +1409,8 @@ def preview():
             HTML_PAGE,
 
             message=(
-                "Invalid Link or Private Video. "
-                "Please try another link."
+                "Invalid Link or Bot Blocked by YouTube. "
+                "Please try again."
             )
 
         )
@@ -1430,6 +1469,8 @@ def download():
 
             pass
 
+    
+    live_proxy = get_working_proxy()
 
     ydl_opts = {
 
@@ -1443,6 +1484,8 @@ def download():
 
     }
 
+    if live_proxy:
+        ydl_opts['proxy'] = live_proxy
 
     # --------------------------------------------------
     # MP3
@@ -1641,8 +1684,8 @@ def download():
             HTML_PAGE,
 
             message=(
-                "Error while downloading. "
-                "Please try another format."
+                "Error while downloading (Proxy/Bot issue). "
+                "Please try again."
             )
 
         )
