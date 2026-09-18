@@ -8,7 +8,7 @@ import imageio_ffmpeg
 
 app = Flask(__name__)
 
-# ADITECHYT V5.4 - FINAL STABLE CODE (PORT 9500 + PREVIEW + QUALITIES + FFMPEG FIX)
+# ADITECHYT V5.5 - FINAL STABLE CODE (PORT 9500 + PREVIEW + QUALITIES + USER-AGENT + FFMPEG FIX)
 HTML_PAGE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -1328,7 +1328,8 @@ def preview():
         ydl_opts = {
             'quiet': True,
             'noplaylist': True,
-            'nocheckcertificate': True
+            'nocheckcertificate': True,
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -1437,6 +1438,7 @@ def download():
 
         'noplaylist': True,
         'nocheckcertificate': True,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         'ffmpeg_location': imageio_ffmpeg.get_ffmpeg_exe()
 
     }
