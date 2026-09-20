@@ -1,6 +1,7 @@
-from flask import Flask, request, render_template_string
-import yt_dlp
 import os
+import io
+from flask import Flask, request, render_template_string, Response, stream_with_context
+import yt_dlp
 
 app = Flask(__name__)
 
@@ -31,7 +32,7 @@ HTML_PAGE = """
         .quality-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 25px; }
         .quality-grid label { cursor: pointer; }
         .quality-grid input[type="radio"] { display: none; }
-        .quality-grid span { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 8px; background: #f8f9fa; border: 2px solid transparent; border-radius: 12px; font-size: 14px; font-weight: 600; color: #7f8c8d; }
+        .quality-grid span { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px 10px; background: #f8f9fa; border: 2px solid transparent; border-radius: 12px; font-size: 14px; font-weight: 600; color: #7f8c8d; }
         .quality-grid input[type="radio"]:checked + span { background: #f0edff; border-color: #6c5ce7; color: #6c5ce7; }
         button.btn-dl { width: 100%; padding: 20px; background: linear-gradient(135deg,#6c5ce7,#a29bfe); color: white; border: none; border-radius: 16px; font-size: 18px; font-weight: 800; cursor: pointer; box-shadow: 0 10px 20px rgba(108,92,231,0.3); }
         .msg { margin-top: 20px; padding: 15px; border-radius: 12px; font-weight: 600; text-align: center; font-size: 14px; background: #fee2e2; color: #e74c3c; border: 1px solid #f87171; word-break: break-all; }
@@ -41,7 +42,7 @@ HTML_PAGE = """
 <body>
     <div class="header">
         <h1>ADITECHYT</h1>
-        <p>Premium Video & Reels Downloader</p>
+        <p>Self-Hosted Video & Reels Downloader</p>
     </div>
     <div class="container">
         <div class="card">
@@ -64,26 +65,16 @@ HTML_PAGE = """
                 <h3 style="font-size:16px; color:#2c3e50; font-weight:800; word-wrap:break-word;">{{ video_info.title }}</h3>
             </div>
 
-            <form action="/download" method="POST">
+            <form action="/stream" method="GET">
                 <input type="hidden" name="url" value="{{ video_info.url }}">
-                <span class="quality-title">Select Format & Quality:</span>
+                <span class="quality-title">Select Format:</span>
                 <div class="quality-grid">
-                    <label><input type="radio" name="format" value="best" checked><span><i class="fa-solid fa-star"></i> Best Quality</span></label>
-                    <label><input type="radio" name="format" value="720p"><span><i class="fa-solid fa-display"></i> 720p HD</span></label>
-                    <label><input type="radio" name="format" value="480p"><span><i class="fa-solid fa-film"></i> 480p SD</span></label>
-                    <label><input type="radio" name="format" value="360p"><span><i class="fa-solid fa-mobile-screen"></i> 360p Low</span></label>
-                    <label style="grid-column: span 2;"><input type="radio" name="format" value="mp3"><span><i class="fa-solid fa-music"></i> MP3 / Audio Only</span></label>
+                    <label><input type="radio" name="format" value="video" checked><span><i class="fa-solid fa-video"></i> MP4 Video</span></label>
+                    <label><input type="radio" name="format" value="audio"><span><i class="fa-solid fa-music"></i> MP3 / Audio</span></label>
                 </div>
-                <button type="submit" class="btn-dl"><i class="fa-solid fa-download"></i> Generate Download Link</button>
+                <button type="submit" class="btn-dl"><i class="fa-solid fa-download"></i> Download Directly</button>
                 <a href="/" style="display:block; text-align:center; margin-top:15px; color:#6c5ce7; font-weight:600; text-decoration:none;"><i class="fa-solid fa-arrow-left"></i> Paste another link</a>
             </form>
-            {% endif %}
-
-            {% if direct_link %}
-            <div style="margin-top:20px; text-align:center; background:#f0edff; padding:20px; border-radius:16px; border:2px dashed #6c5ce7;">
-                <p style="font-weight:700; margin-bottom:12px; color:#2c3e50; font-size:16px;">🎉 Stream Ready!</p>
-                <a href="{{ direct_link }}" target="_blank" rel="noopener noreferrer" download="video.mp4" class="btn-dl" style="text-decoration:none; display:inline-block; padding:15px 30px; font-size:16px;">Click Here To Download / Play</a>
-            </div>
             {% endif %}
 
             {% if message %}
@@ -96,23 +87,26 @@ HTML_PAGE = """
 </html>
 """
 
-# Native bypass configuration (Images aur storyboard ignore karega)
-BASE_OPTS = {
-    'quiet': True,
-    'noplaylist': True,
-    'skip_download': True,
-    'geo_bypass': True,
-    'no_warnings': True,
-    'extractor_args': {
-        'youtube': {
-            'player_client': ['android_testsuite', 'mweb'],
-            'player_skip': ['webpage', 'configs']
+def get_base_opts():
+    opts = {
+        'quiet': True,
+        'noplaylist': True,
+        'geo_bypass': True,
+        'no_warnings': True,
+        # Strictly self-hosted fallback client
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['web', 'mweb']
+            }
+        },
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
         }
-    },
-    'http_headers': {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36',
     }
-}
+    if os.path.exists('cookies.txt'):
+        opts['cookiefile'] = 'cookies.txt'
+    return opts
 
 @app.route('/', methods=['GET'])
 def index():
@@ -122,13 +116,13 @@ def index():
 def preview():
     url = request.form.get('url', '').strip()
     if not url:
-        return render_template_string(HTML_PAGE, message="Kripya YouTube link enter karein.")
+        return render_template_string(HTML_PAGE, message="Please enter a valid link.")
     try:
-        with yt_dlp.YoutubeDL(BASE_OPTS) as ydl:
+        opts = get_base_opts()
+        opts['skip_download'] = True
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            # Metadata bina format resolution crash ke uthao
             info = ydl.extract_info(url, download=False, process=False)
-            
-        if not info:
-            return render_template_string(HTML_PAGE, message="Video details nahi mil saki.")
 
         video_info = {
             'title': info.get('title', 'YouTube Video'),
@@ -139,81 +133,54 @@ def preview():
     except Exception as e:
         return render_template_string(HTML_PAGE, message=f"Preview Error: {str(e)}")
 
-@app.route('/download', methods=['POST'])
-def download():
-    url = request.form.get('url', '').strip()
-    selected_format = request.form.get('format', 'best')
+@app.route('/stream', methods=['GET'])
+def stream():
+    url = request.args.get('url', '').strip()
+    mode = request.args.get('format', 'video')
+
+    if not url:
+        return "Missing URL", 400
+
     try:
-        opts = BASE_OPTS.copy()
-        opts['format'] = 'all'
+        opts = get_base_opts()
+        # Direct stream: Single file progressive format force karein taaki merging na karni pade
+        if mode == 'audio':
+            opts['format'] = 'ba/b'
+        else:
+            opts['format'] = 'b[ext=mp4]/best[ext=mp4]/best'
 
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
+            media_url = info.get('url')
+            title = info.get('title', 'download').replace('/', '_')
 
-        if not info:
-            return render_template_string(HTML_PAGE, message="Extraction fail ho gayi.")
+        if not media_url:
+            return "Failed to extract streaming stream from YouTube.", 500
 
-        formats = info.get('formats', [])
-        stream_url = None
+        # Self-pipe: Server khud stream fetch karke user ko dega (Zero IP Block)
+        import urllib.request
+        req = urllib.request.Request(media_url, headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
 
-        # Sirf asli media video/audio links uthao (ytimg, storyboard, images ko strictly filter out karo)
-        valid_streams = [
-            f for f in formats 
-            if f.get('url') and 'googlevideo.com' in f.get('url')
-        ]
+        def generate():
+            with urllib.request.urlopen(req) as resp:
+                while True:
+                    chunk = resp.read(1024 * 512)  # 512KB chunks
+                    if not chunk:
+                        break
+                    yield chunk
 
-        if selected_format == 'mp3':
-            # Audio-only stream filter
-            audio_streams = [
-                f for f in valid_streams 
-                if f.get('vcodec') == 'none' and f.get('acodec') != 'none'
-            ]
-            if audio_streams:
-                stream_url = audio_streams[-1]['url']
-        
-        elif selected_format in ['720p', '480p', '360p']:
-            target_res = int(selected_format.replace('p', ''))
-            # Progressive streams jisme audio + video dono ho
-            progressive = [
-                f for f in valid_streams 
-                if f.get('height') and f['height'] <= target_res 
-                and f.get('vcodec') != 'none' and f.get('acodec') != 'none'
-            ]
-            if progressive:
-                stream_url = progressive[-1]['url']
-
-        # Agar selected quality na mile toh Best progressive video stream uthao
-        if not stream_url:
-            all_progressive = [
-                f for f in valid_streams 
-                if f.get('vcodec') != 'none' and f.get('acodec') != 'none'
-            ]
-            if all_progressive:
-                stream_url = all_progressive[-1]['url']
-
-        # Fallback to any valid googlevideo stream
-        if not stream_url and valid_streams:
-            stream_url = valid_streams[-1]['url']
-
-        # Aakhri fallback agar googlevideo check me na aaye
-        if not stream_url:
-            for f in reversed(formats):
-                u = f.get('url', '')
-                if u and not u.endswith('.jpg') and not u.endswith('.png') and 'ytimg.com' not in u:
-                    stream_url = u
-                    break
-
-        if not stream_url:
-            return render_template_string(HTML_PAGE, message="Playable stream link generate nahi ho saka.")
-
-        video_info = {
-            'title': info.get('title', 'YouTube Video'),
-            'thumbnail': info.get('thumbnail', ''),
-            'url': url
-        }
-        return render_template_string(HTML_PAGE, video_info=video_info, direct_link=stream_url)
+        ext = "mp3" if mode == "audio" else "mp4"
+        return Response(
+            stream_with_context(generate()),
+            content_type="video/mp4" if ext == "mp4" else "audio/mpeg",
+            headers={
+                "Content-Disposition": f'attachment; filename="{title}.{ext}"'
+            }
+        )
     except Exception as e:
-        return render_template_string(HTML_PAGE, message=f"Download Error: {str(e)}")
+        return f"Download Stream Error: {str(e)}", 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=9500, debug=False)
