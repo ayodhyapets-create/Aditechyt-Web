@@ -1,5 +1,6 @@
 from flask import Flask, request, render_template_string
 import yt_dlp
+import os
 
 app = Flask(__name__)
 
@@ -94,22 +95,24 @@ HTML_PAGE = """
 </html>
 """
 
-# Sabse safe options bina kisi strict format restriction ke
+# Multiple player clients fallback setup
 BASE_OPTS = {
     'quiet': True,
     'noplaylist': True,
     'skip_download': True,
-    'cookiefile': 'cookies.txt',
     'geo_bypass': True,
     'extractor_args': {
         'youtube': {
-            'player_client': ['web']
+            'player_client': ['ios', 'mweb', 'web_creator']
         }
     },
     'http_headers': {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
     }
 }
+
+if os.path.exists('cookies.txt'):
+    BASE_OPTS['cookiefile'] = 'cookies.txt'
 
 @app.route('/', methods=['GET'])
 def index():
@@ -121,12 +124,14 @@ def preview():
     if not url:
         return render_template_string(HTML_PAGE, message="Please enter a valid link.")
     try:
-        with yt_dlp.YoutubeDL(BASE_OPTS) as ydl:
-            info = ydl.extract_info(url, download=False)
+        opts = BASE_OPTS.copy()
+        # Preview ke liye stream parse bypass
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False, process=False)
             
         video_info = {
-            'title': info.get('title', 'Unknown Title'),
-            'thumbnail': info.get('thumbnail', ''),
+            'title': info.get('title', 'YouTube Video'),
+            'thumbnail': info.get('thumbnail') or f"https://i.ytimg.com/vi/{info.get('id')}/hqdefault.jpg",
             'url': url
         }
         return render_template_string(HTML_PAGE, video_info=video_info)
@@ -137,11 +142,26 @@ def preview():
 @app.route('/download', methods=['POST'])
 def download():
     url = request.form.get('url', '').strip()
+    selected_format = request.form.get('format', 'best')
     try:
-        # Yahan koi bhi strict format nahi lagaya, jo available hoga seedha utha lega
-        with yt_dlp.YoutubeDL(BASE_OPTS) as ydl:
+        opts = BASE_OPTS.copy()
+        if selected_format == '1080p':
+            opts['format'] = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best'
+        elif selected_format == '720p':
+            opts['format'] = 'bestvideo[height<=720]+bestaudio/best[height<=720]/best'
+        elif selected_format == 'mp3':
+            opts['format'] = 'bestaudio/best'
+        else:
+            opts['format'] = 'best'
+
+        with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            stream_url = info.get('url') or (info.get('formats')[-1].get('url') if 'formats' in info else '')
+            stream_url = info.get('url')
+            if not stream_url and 'formats' in info:
+                # Filter valid video formats
+                valid_formats = [f['url'] for f in info['formats'] if f.get('url')]
+                if valid_formats:
+                    stream_url = valid_formats[-1]
             
         video_info = {
             'title': info.get('title', 'Unknown Title'),
