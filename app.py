@@ -69,9 +69,8 @@ HTML_PAGE = """
                 <span class="quality-title">Select Format & Quality:</span>
                 <div class="quality-grid">
                     <label><input type="radio" name="format" value="best" checked><span><i class="fa-solid fa-star"></i> Best Quality</span></label>
-                    <label><input type="radio" name="format" value="720p"><span><i class="fa-solid fa-mobile-screen"></i> 720p / Standard</span></label>
-                    <label><input type="radio" name="format" value="360p"><span><i class="fa-solid fa-film"></i> 360p Video</span></label>
-                    <label><input type="radio" name="format" value="mp3"><span><i class="fa-solid fa-music"></i> Audio Stream</span></label>
+                    <label><input type="radio" name="format" value="720p"><span><i class="fa-solid fa-mobile-screen"></i> 720p / 360p</span></label>
+                    <label><input type="radio" name="format" value="mp3"><span><i class="fa-solid fa-music"></i> MP3 Audio</span></label>
                 </div>
                 <button type="submit" class="btn-dl"><i class="fa-solid fa-download"></i> Get Direct Stream Link</button>
                 <a href="/" style="display:block; text-align:center; margin-top:15px; color:#6c5ce7; font-weight:600; text-decoration:none;"><i class="fa-solid fa-arrow-left"></i> Paste another link</a>
@@ -95,6 +94,7 @@ HTML_PAGE = """
 </html>
 """
 
+# Yeh configuration Render ki datacenter IP par formats hide hone se rokti hai
 BASE_OPTS = {
     'quiet': True,
     'noplaylist': True,
@@ -102,17 +102,13 @@ BASE_OPTS = {
     'geo_bypass': True,
     'extractor_args': {
         'youtube': {
-            'player_client': ['web']
+            'player_client': ['web_embedded', 'android_music']
         }
     },
     'http_headers': {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0',
-        'Accept-Language': 'en-US,en;q=0.5'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
     }
 }
-
-if os.path.exists('cookies.txt'):
-    BASE_OPTS['cookiefile'] = 'cookies.txt'
 
 @app.route('/', methods=['GET'])
 def index():
@@ -128,9 +124,6 @@ def preview():
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False, process=False)
             
-        if not info:
-            return render_template_string(HTML_PAGE, message="Could not fetch video info.")
-
         video_info = {
             'title': info.get('title', 'YouTube Video'),
             'thumbnail': info.get('thumbnail') or f"https://i.ytimg.com/vi/{info.get('id')}/hqdefault.jpg",
@@ -146,43 +139,37 @@ def download():
     selected_format = request.form.get('format', 'best')
     try:
         opts = BASE_OPTS.copy()
-        # Sabse important: Kisi bhi format string ko pass mat karo jisse error aana band ho jaye
-        opts['format'] = None
-
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
             
         if not info:
-            return render_template_string(HTML_PAGE, message="Extraction failed. YouTube returned no info.")
+            return render_template_string(HTML_PAGE, message="Failed to extract video details.")
 
         formats = info.get('formats', [])
         stream_url = None
 
-        # 1. MP3 Audio
         if selected_format == 'mp3':
+            # Audio-only stream
             for f in reversed(formats):
                 if f.get('vcodec') == 'none' and f.get('acodec') != 'none' and f.get('url'):
                     stream_url = f['url']
                     break
-
-        # 2. Specific resolutions (360p / 720p)
-        elif selected_format in ['360p', '720p']:
-            target_h = 360 if selected_format == '360p' else 720
-            # Progressive stream dhoondo
+        elif selected_format == '720p':
+            # 720p ya progressive stream
             for f in reversed(formats):
                 h = f.get('height')
-                if h and h <= target_h and f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
+                if h and h <= 720 and f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
                     stream_url = f['url']
                     break
 
-        # 3. Best Quality (Combined progressive stream)
+        # Best / Fallback stream
         if not stream_url:
             for f in reversed(formats):
                 if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
                     stream_url = f['url']
                     break
 
-        # 4. Fallback: Koi bhi playable URL
+        # Any valid media url
         if not stream_url:
             for f in reversed(formats):
                 if f.get('url'):
@@ -193,7 +180,7 @@ def download():
             stream_url = info.get('url')
 
         if not stream_url:
-            return render_template_string(HTML_PAGE, message="Direct stream URL not found in format list.")
+            return render_template_string(HTML_PAGE, message="No playable stream available for this video.")
 
         video_info = {
             'title': info.get('title', 'YouTube Video'),
