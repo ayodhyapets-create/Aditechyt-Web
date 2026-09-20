@@ -60,11 +60,10 @@ HTML_PAGE = """
                 <input type="hidden" name="url" value="{{ video_info.url }}">
                 <span class="quality-title">Choose Quality:</span>
                 <div class="quality-grid">
-                    <label><input type="radio" name="format" value="best" checked><span><i class="fa-solid fa-star"></i> Best Quality</span></label>
+                    <label><input type="radio" name="format" value="best" checked><span><i class="fa-solid fa-star"></i> Auto (Best)</span></label>
                     <label><input type="radio" name="format" value="720"><span><i class="fa-solid fa-tv"></i> 720p HD</span></label>
-                    <label><input type="radio" name="format" value="480"><span><i class="fa-solid fa-film"></i> 480p SD</span></label>
                     <label><input type="radio" name="format" value="360"><span><i class="fa-solid fa-mobile-screen"></i> 360p Low</span></label>
-                    <label style="grid-column: span 2;"><input type="radio" name="format" value="audio"><span><i class="fa-solid fa-music"></i> MP3 / Audio</span></label>
+                    <label><input type="radio" name="format" value="audio"><span><i class="fa-solid fa-music"></i> MP3 / Audio</span></label>
                 </div>
                 <button type="submit" class="btn-dl"><i class="fa-solid fa-download"></i> Download Video</button>
                 <a href="/" style="display:block; text-align:center; margin-top:15px; color:#6c5ce7; font-weight:600; text-decoration:none;"><i class="fa-solid fa-arrow-left"></i> Paste another link</a>
@@ -88,6 +87,8 @@ def get_base_ydl_opts():
         'geo_bypass': True,
         'no_warnings': True,
         'skip_download': True,
+        # Format selector ko explicitly 'all' set karein taaki yt-dlp format match exception throw na kare
+        'format': 'all',
         'extractor_args': {
             'youtube': {
                 'player_client': ['android', 'web']
@@ -113,7 +114,6 @@ def preview():
     try:
         opts = get_base_ydl_opts()
         with yt_dlp.YoutubeDL(opts) as ydl:
-            # Metadata bina crash extract karein
             info = ydl.extract_info(url, download=False, process=False)
 
         video_info = {
@@ -135,6 +135,9 @@ def stream():
 
     try:
         opts = get_base_ydl_opts()
+        # 'format': 'all' rakha hai taaki missing format error trigger na ho
+        opts['format'] = 'all'
+
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
 
@@ -149,23 +152,28 @@ def stream():
         media_url = None
 
         if selected_format == 'audio':
-            # Audio format filter
             for f in reversed(valid):
                 if f.get('vcodec') == 'none' and f.get('acodec') != 'none':
                     media_url = f['url']
                     break
-        elif selected_format in ['720', '480', '360']:
+        elif selected_format in ['720', '360']:
             target = int(selected_format)
-            # User dwara mangi gayi resolution match karein
             for f in reversed(valid):
                 if f.get('height') and f['height'] <= target and f.get('vcodec') != 'none' and f.get('acodec') != 'none':
                     media_url = f['url']
                     break
 
-        # Fallback: Best working progressive format
+        # Progressive fallback
         if not media_url:
             for f in reversed(valid):
                 if f.get('vcodec') != 'none' and f.get('acodec') != 'none':
+                    media_url = f['url']
+                    break
+
+        # Any video stream fallback
+        if not media_url:
+            for f in reversed(valid):
+                if f.get('vcodec') != 'none':
                     media_url = f['url']
                     break
 
@@ -176,13 +184,14 @@ def stream():
             media_url = info.get('url')
 
         if not media_url:
-            return "Unable to find downloadable media stream.", 500
+            return "Media stream URL nahi mil saka.", 500
 
-        title = "".join(c for c in info.get('title', 'video') if c.isalnum() or c in (' ', '_', '-')).strip() or "video"
+        raw_title = info.get('title', 'video')
+        title = "".join(c for c in raw_title if c.isalnum() or c in (' ', '_', '-')).strip() or "video"
         ext = "mp3" if selected_format == "audio" else "mp4"
 
-        # Python requests se chunks pipe karein direct user ke browser me
-        stream_req = requests.get(media_url, stream=True, timeout=15)
+        # Direct chunk streaming via requests
+        stream_req = requests.get(media_url, stream=True, timeout=20)
 
         def generate():
             for chunk in stream_req.iter_content(chunk_size=1024 * 512):
