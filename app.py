@@ -95,7 +95,6 @@ HTML_PAGE = """
 </html>
 """
 
-# Multiple player clients fallback setup
 BASE_OPTS = {
     'quiet': True,
     'noplaylist': True,
@@ -103,11 +102,11 @@ BASE_OPTS = {
     'geo_bypass': True,
     'extractor_args': {
         'youtube': {
-            'player_client': ['ios', 'mweb', 'web_creator']
+            'player_client': ['ios', 'android', 'mweb']
         }
     },
     'http_headers': {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     }
 }
 
@@ -124,9 +123,7 @@ def preview():
     if not url:
         return render_template_string(HTML_PAGE, message="Please enter a valid link.")
     try:
-        opts = BASE_OPTS.copy()
-        # Preview ke liye stream parse bypass
-        with yt_dlp.YoutubeDL(opts) as ydl:
+        with yt_dlp.YoutubeDL(BASE_OPTS) as ydl:
             info = ydl.extract_info(url, download=False, process=False)
             
         video_info = {
@@ -145,26 +142,41 @@ def download():
     selected_format = request.form.get('format', 'best')
     try:
         opts = BASE_OPTS.copy()
-        if selected_format == '1080p':
-            opts['format'] = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best'
-        elif selected_format == '720p':
-            opts['format'] = 'bestvideo[height<=720]+bestaudio/best[height<=720]/best'
-        elif selected_format == 'mp3':
-            opts['format'] = 'bestaudio/best'
-        else:
-            opts['format'] = 'best'
-
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            stream_url = info.get('url')
-            if not stream_url and 'formats' in info:
-                # Filter valid video formats
-                valid_formats = [f['url'] for f in info['formats'] if f.get('url')]
-                if valid_formats:
-                    stream_url = valid_formats[-1]
             
+        formats = info.get('formats', [])
+        stream_url = None
+
+        if selected_format == 'mp3':
+            audio_formats = [f for f in formats if f.get('vcodec') == 'none' and f.get('acodec') != 'none' and f.get('url')]
+            if audio_formats:
+                stream_url = audio_formats[-1]['url']
+        elif selected_format in ['1080p', '720p']:
+            target_height = 1080 if selected_format == '1080p' else 720
+            # Progressive format dhoondo (video + audio saath me)
+            prog_formats = [
+                f for f in formats 
+                if f.get('height') and f.get('height') <= target_height 
+                and f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url')
+            ]
+            if prog_formats:
+                stream_url = prog_formats[-1]['url']
+
+        # Fallback to direct URL or best available URL
+        if not stream_url:
+            stream_url = info.get('url')
+            
+        if not stream_url:
+            valid_streams = [f['url'] for f in formats if f.get('url')]
+            if valid_streams:
+                stream_url = valid_streams[-1]
+
+        if not stream_url:
+            return render_template_string(HTML_PAGE, message="No direct stream URL available for this video.")
+
         video_info = {
-            'title': info.get('title', 'Unknown Title'),
+            'title': info.get('title', 'YouTube Video'),
             'thumbnail': info.get('thumbnail', ''),
             'url': url
         }
