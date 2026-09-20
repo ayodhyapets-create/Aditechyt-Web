@@ -69,9 +69,9 @@ HTML_PAGE = """
                 <span class="quality-title">Select Format & Quality:</span>
                 <div class="quality-grid">
                     <label><input type="radio" name="format" value="best" checked><span><i class="fa-solid fa-star"></i> Best Quality</span></label>
-                    <label><input type="radio" name="format" value="1080p"><span><i class="fa-solid fa-display"></i> 1080p Video</span></label>
                     <label><input type="radio" name="format" value="720p"><span><i class="fa-solid fa-mobile-screen"></i> 720p Video</span></label>
-                    <label><input type="radio" name="format" value="mp3"><span><i class="fa-solid fa-music"></i> MP3 Audio</span></label>
+                    <label><input type="radio" name="format" value="360p"><span><i class="fa-solid fa-film"></i> 360p Video</span></label>
+                    <label><input type="radio" name="format" value="mp3"><span><i class="fa-solid fa-music"></i> Audio Stream</span></label>
                 </div>
                 <button type="submit" class="btn-dl"><i class="fa-solid fa-download"></i> Get Direct Stream Link</button>
                 <a href="/" style="display:block; text-align:center; margin-top:15px; color:#6c5ce7; font-weight:600; text-decoration:none;"><i class="fa-solid fa-arrow-left"></i> Paste another link</a>
@@ -95,20 +95,19 @@ HTML_PAGE = """
 </html>
 """
 
-# Native pure yt-dlp config (Bypass format-hiding on Datacenters)
 BASE_OPTS = {
     'quiet': True,
     'noplaylist': True,
     'skip_download': True,
     'geo_bypass': True,
-    'ignoreerrors': True,
     'extractor_args': {
         'youtube': {
-            'player_client': ['tv_embedded', 'android_creator', 'web']
+            'player_client': ['web']
         }
     },
     'http_headers': {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0',
+        'Accept-Language': 'en-US,en;q=0.5'
     }
 }
 
@@ -127,9 +126,11 @@ def preview():
     try:
         opts = BASE_OPTS.copy()
         with yt_dlp.YoutubeDL(opts) as ydl:
-            # Metadata fetch without strict stream extraction
             info = ydl.extract_info(url, download=False, process=False)
             
+        if not info:
+            return render_template_string(HTML_PAGE, message="Could not fetch video info.")
+
         video_info = {
             'title': info.get('title', 'YouTube Video'),
             'thumbnail': info.get('thumbnail') or f"https://i.ytimg.com/vi/{info.get('id')}/hqdefault.jpg",
@@ -145,30 +146,45 @@ def download():
     selected_format = request.form.get('format', 'best')
     try:
         opts = BASE_OPTS.copy()
-        
-        # Pure yt-dlp format selector: Progressive streams or standalone audio
-        if selected_format == 'mp3':
-            opts['format'] = 'bestaudio[ext=m4a]/bestaudio/best'
-        elif selected_format == '720p':
-            opts['format'] = 'best[height<=720][vcodec!=none][acodec!=none]/best[height<=720]/best'
-        elif selected_format == '1080p':
-            opts['format'] = 'best[height<=1080][vcodec!=none][acodec!=none]/best[height<=1080]/best'
-        else:
-            opts['format'] = 'best[vcodec!=none][acodec!=none]/best'
-
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
             
-            # Agar format selection fail ho jaye toh direct format list scan karein
+        if not info:
+            return render_template_string(HTML_PAGE, message="Extraction failed. YouTube returned no response.")
+
+        formats = info.get('formats', [])
+        stream_url = None
+
+        if selected_format == 'mp3':
+            # Audio streams
+            for f in reversed(formats):
+                if f.get('vcodec') == 'none' and f.get('acodec') != 'none' and f.get('url'):
+                    stream_url = f['url']
+                    break
+        elif selected_format == '360p':
+            for f in formats:
+                if f.get('height') == 360 and f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
+                    stream_url = f['url']
+                    break
+        elif selected_format == '720p':
+            for f in reversed(formats):
+                if f.get('height') and f['height'] <= 720 and f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
+                    stream_url = f['url']
+                    break
+
+        # Fallback: Agar specific na mile toh pehla combined stream uthao
+        if not stream_url:
+            for f in reversed(formats):
+                if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
+                    stream_url = f['url']
+                    break
+
+        # Aakhri fallback: direct url field
+        if not stream_url:
             stream_url = info.get('url')
-            if not stream_url and 'formats' in info:
-                # Direct working url find karein
-                available = [f['url'] for f in info['formats'] if f.get('url')]
-                if available:
-                    stream_url = available[-1]
 
         if not stream_url:
-            return render_template_string(HTML_PAGE, message="No direct stream found. YouTube restricted direct extraction for this URL.")
+            return render_template_string(HTML_PAGE, message="No direct video link found in formats list.")
 
         video_info = {
             'title': info.get('title', 'YouTube Video'),
