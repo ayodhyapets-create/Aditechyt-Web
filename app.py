@@ -1,4 +1,6 @@
 import os
+import re
+import json
 import urllib.request
 from flask import Flask, request, render_template_string, Response, stream_with_context
 import yt_dlp
@@ -78,26 +80,76 @@ HTML_PAGE = """
 </html>
 """
 
-def get_base_opts():
-    opts = {
+def extract_direct_media(url, mode='video'):
+    # Video ID extract karein
+    v_match = re.search(r"(?:v=|\/|youtu\.be\/|shorts\/)([a-zA-Z0-9_-]{11})", url)
+    v_id = v_match.group(1) if v_match else None
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9'
+    }
+
+    # Tarika 1: Direct YouTube Player Raw JSON Data Extraction (Zero Format Resolver)
+    if v_id:
+        try:
+            req = urllib.request.Request(f"https://www.youtube.com/watch?v={v_id}", headers=headers)
+            html = urllib.request.urlopen(req, timeout=8).read().decode('utf-8', errors='ignore')
+            
+            # Title
+            title_m = re.search(r'<title>(.*?)</title>', html)
+            title = title_m.group(1).replace(' - YouTube', '').strip() if title_m else 'video'
+            
+            # Streaming data raw JSON search
+            json_match = re.search(r'ytInitialPlayerResponse\s*=\s*({.+?});', html)
+            if json_match:
+                data = json.loads(json_match.group(1))
+                streaming_data = data.get('streamingData', {})
+                formats = streaming_data.get('formats', []) + streaming_data.get('adaptiveFormats', [])
+                
+                target_url = None
+                if mode == 'audio':
+                    for f in formats:
+                        if 'audio' in f.get('mimeType', '') and f.get('url'):
+                            target_url = f['url']
+                            break
+                else:
+                    for f in formats:
+                        if 'video/mp4' in f.get('mimeType', '') and f.get('url'):
+                            target_url = f['url']
+                            break
+                
+                if target_url:
+                    return target_url, title
+        except Exception:
+            pass
+
+    # Tarika 2: yt-dlp Native Dump without processing
+    ydl_opts = {
         'quiet': True,
         'noplaylist': True,
         'geo_bypass': True,
-        'no_warnings': True,
         'skip_download': True,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['web', 'mweb']
-            }
-        },
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-            'Accept-Language': 'en-US,en;q=0.9',
-        }
+        'format': 'best',
+        'ignoreerrors': True
     }
     if os.path.exists('cookies.txt'):
-        opts['cookiefile'] = 'cookies.txt'
-    return opts
+        ydl_opts['cookiefile'] = 'cookies.txt'
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+        if info:
+            title = info.get('title', 'video')
+            media_url = info.get('url')
+            if not media_url and 'formats' in info:
+                for f in reversed(info['formats']):
+                    if f.get('url') and 'googlevideo.com' in f.get('url'):
+                        media_url = f['url']
+                        break
+            if media_url:
+                return media_url, title
+
+    return None, "video"
 
 @app.route('/', methods=['GET'])
 def index():
@@ -108,20 +160,26 @@ def preview():
     url = request.form.get('url', '').strip()
     if not url:
         return render_template_string(HTML_PAGE, message="Please enter a valid link.")
-    try:
-        opts = get_base_opts()
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            # process=False se format validation bypass hoti hai
-            info = ydl.extract_info(url, download=False, process=False)
+    
+    v_match = re.search(r"(?:v=|\/|youtu\.be\/|shorts\/)([a-zA-Z0-9_-]{11})", url)
+    v_id = v_match.group(1) if v_match else None
+    
+    # Official oembed call taaki bot check na lage
+    title = "YouTube Video"
+    if v_id:
+        try:
+            req = urllib.request.Request(f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={v_id}&format=json", headers={'User-Agent': 'Mozilla/5.0'})
+            res = json.loads(urllib.request.urlopen(req, timeout=5).read().decode())
+            title = res.get('title', title)
+        except Exception:
+            pass
 
-        video_info = {
-            'title': info.get('title', 'YouTube Video'),
-            'thumbnail': info.get('thumbnail') or f"https://i.ytimg.com/vi/{info.get('id')}/hqdefault.jpg",
-            'url': url
-        }
-        return render_template_string(HTML_PAGE, video_info=video_info)
-    except Exception as e:
-        return render_template_string(HTML_PAGE, message=f"Preview Error: {str(e)}")
+    video_info = {
+        'title': title,
+        'thumbnail': f"https://i.ytimg.com/vi/{v_id}/hqdefault.jpg" if v_id else "",
+        'url': url
+    }
+    return render_template_string(HTML_PAGE, video_info=video_info)
 
 @app.route('/stream', methods=['GET'])
 def stream():
@@ -131,77 +189,33 @@ def stream():
     if not url:
         return "Missing URL", 400
 
-    try:
-        opts = get_base_opts()
-        
-        # KEY FIX: process=False lagane se yt-dlp format match exception fekega hi nahi
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            raw_info = ydl.extract_info(url, download=False, process=False)
+    media_url, title = extract_direct_media(url, mode)
 
-        if not raw_info:
-            return "Video details fetch nahi ho saki.", 500
+    if not media_url:
+        return "Streaming URL extract nahi ho saka. YouTube stream encrypted hai.", 500
 
-        formats = raw_info.get('formats', [])
-        media_url = None
+    safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '_', '-')).strip() or "download"
 
-        # Filter out image thumbnails/storyboards
-        clean_formats = [
-            f for f in formats 
-            if f.get('url') and not f.get('url', '').endswith(('.jpg', '.png', '.webp')) and 'ytimg.com' not in f.get('url', '')
-        ]
+    req = urllib.request.Request(media_url, headers={
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+    })
 
-        if mode == 'audio':
-            for f in reversed(clean_formats):
-                if f.get('vcodec') == 'none' and f.get('url'):
-                    media_url = f['url']
+    def generate():
+        with urllib.request.urlopen(req) as resp:
+            while True:
+                chunk = resp.read(1024 * 512)
+                if not chunk:
                     break
-        else:
-            for f in reversed(clean_formats):
-                if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
-                    media_url = f['url']
-                    break
+                yield chunk
 
-        # Fallback to any valid playable stream
-        if not media_url and clean_formats:
-            media_url = clean_formats[-1]['url']
-
-        if not media_url:
-            media_url = raw_info.get('url')
-
-        if not media_url:
-            # Agar format raw info mein nahi mila toh processed fallback
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                proc = ydl.process_ie_result(raw_info, download=False)
-                media_url = proc.get('url')
-
-        if not media_url:
-            return "Direct stream URL nahi mil saka.", 500
-
-        raw_title = raw_info.get('title', 'video')
-        title = "".join(c for c in raw_title if c.isalnum() or c in (' ', '_', '-')).strip() or "download"
-
-        req = urllib.request.Request(media_url, headers={
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
-        })
-
-        def generate():
-            with urllib.request.urlopen(req) as resp:
-                while True:
-                    chunk = resp.read(1024 * 512)
-                    if not chunk:
-                        break
-                    yield chunk
-
-        ext = "mp3" if mode == "audio" else "mp4"
-        return Response(
-            stream_with_context(generate()),
-            content_type="video/mp4" if ext == "mp4" else "audio/mpeg",
-            headers={
-                "Content-Disposition": f'attachment; filename="{title}.{ext}"'
-            }
-        )
-    except Exception as e:
-        return f"Download Stream Error: {str(e)}", 500
+    ext = "mp3" if mode == "audio" else "mp4"
+    return Response(
+        stream_with_context(generate()),
+        content_type="video/mp4" if ext == "mp4" else "audio/mpeg",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_title}.{ext}"'
+        }
+    )
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=9500, debug=False)
