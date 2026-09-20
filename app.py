@@ -39,7 +39,7 @@ HTML_PAGE = """
 <body>
     <div class="header">
         <h1>ADITECHYT</h1>
-        <p>Native Quality Stream Downloader</p>
+        <p>Direct Stream Downloader</p>
     </div>
     <div class="container">
         <div class="card">
@@ -58,14 +58,12 @@ HTML_PAGE = """
 
             <form action="/stream" method="GET">
                 <input type="hidden" name="url" value="{{ video_info.url }}">
-                <span class="quality-title">Choose Quality:</span>
+                <span class="quality-title">Choose Download Type:</span>
                 <div class="quality-grid">
-                    <label><input type="radio" name="format" value="best" checked><span><i class="fa-solid fa-star"></i> Auto (Best)</span></label>
-                    <label><input type="radio" name="format" value="720"><span><i class="fa-solid fa-tv"></i> 720p HD</span></label>
-                    <label><input type="radio" name="format" value="360"><span><i class="fa-solid fa-mobile-screen"></i> 360p Low</span></label>
-                    <label><input type="radio" name="format" value="audio"><span><i class="fa-solid fa-music"></i> MP3 / Audio</span></label>
+                    <label><input type="radio" name="format" value="video" checked><span><i class="fa-solid fa-video"></i> Full MP4 Video</span></label>
+                    <label><input type="radio" name="format" value="audio"><span><i class="fa-solid fa-music"></i> Audio Only (MP3)</span></label>
                 </div>
-                <button type="submit" class="btn-dl"><i class="fa-solid fa-download"></i> Download Video</button>
+                <button type="submit" class="btn-dl"><i class="fa-solid fa-download"></i> Download Directly</button>
                 <a href="/" style="display:block; text-align:center; margin-top:15px; color:#6c5ce7; font-weight:600; text-decoration:none;"><i class="fa-solid fa-arrow-left"></i> Paste another link</a>
             </form>
             {% endif %}
@@ -81,25 +79,21 @@ HTML_PAGE = """
 """
 
 def get_base_ydl_opts():
-    opts = {
+    return {
         'quiet': True,
         'noplaylist': True,
         'geo_bypass': True,
         'no_warnings': True,
         'skip_download': True,
-        'format': 'all',
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'web']
+                'player_client': ['android', 'ios']
             }
         },
         'http_headers': {
             'User-Agent': 'com.google.android.youtube/19.10.37 (Linux; U; Android 11; en_US) gzip',
         }
     }
-    if os.path.exists('cookies.txt'):
-        opts['cookiefile'] = 'cookies.txt'
-    return opts
 
 @app.route('/', methods=['GET'])
 def index():
@@ -127,78 +121,44 @@ def preview():
 @app.route('/stream', methods=['GET'])
 def stream():
     url = request.args.get('url', '').strip()
-    selected_format = request.args.get('format', 'best')
+    mode = request.args.get('format', 'video')
 
     if not url:
         return "Missing URL", 400
 
     try:
         opts = get_base_ydl_opts()
+        
+        # Audio ke liye direct best audio, Video ke liye single progressive format (Audio+Video sath me)
+        if mode == 'audio':
+            opts['format'] = 'ba/bestaudio[ext=m4a]/bestaudio'
+        else:
+            opts['format'] = 'b[ext=mp4]/best[vcodec!=none][acodec!=none]/18/22/best'
+
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
 
-        formats = info.get('formats', [])
+        media_url = info.get('url')
 
-        # STRICT FILTER: Storyboard (sb0, sb1...), images aur mhtml ko bahar nikalo
-        valid = []
-        for f in formats:
-            fid = str(f.get('format_id', ''))
-            furl = f.get('url', '')
-            ext = f.get('ext', '')
-
-            # Storyboard ya static image formats skip
-            if fid.startswith('sb') or 'storyboard' in furl.lower():
-                continue
-            if ext in ['mhtml', 'jpg', 'jpeg', 'png', 'webp']:
-                continue
-            if 'ytimg.com' in furl:
-                continue
-            if not furl:
-                continue
-
-            valid.append(f)
-
-        media_url = None
-
-        if selected_format == 'audio':
-            for f in reversed(valid):
-                if f.get('vcodec') == 'none' and f.get('acodec') not in ['none', None]:
-                    media_url = f['url']
+        # Fallback: formats array me se direct googlevideo stream nikaalein
+        if not media_url and 'formats' in info:
+            for f in reversed(info['formats']):
+                u = f.get('url', '')
+                fid = str(f.get('format_id', ''))
+                # Storyboard aur images ko ignore karein
+                if not fid.startswith('sb') and 'googlevideo.com' in u and f.get('vcodec') != 'none':
+                    media_url = u
                     break
-        elif selected_format in ['720', '360']:
-            target = int(selected_format)
-            for f in reversed(valid):
-                h = f.get('height') or 0
-                if h <= target and f.get('vcodec') not in ['none', None] and f.get('acodec') not in ['none', None]:
-                    media_url = f['url']
-                    break
-
-        # Progressive video+audio stream fallback
-        if not media_url:
-            for f in reversed(valid):
-                if f.get('vcodec') not in ['none', None] and f.get('acodec') not in ['none', None]:
-                    media_url = f['url']
-                    break
-
-        # Video stream fallback (agar combined na mile)
-        if not media_url:
-            for f in reversed(valid):
-                if f.get('vcodec') not in ['none', None]:
-                    media_url = f['url']
-                    break
-
-        # Aakhri safe valid stream
-        if not media_url and valid:
-            media_url = valid[-1]['url']
 
         if not media_url:
-            return "Real playable stream nahi mil saki.", 500
+            return "Playable stream link nahi mila.", 500
 
         raw_title = info.get('title', 'video')
         title = "".join(c for c in raw_title if c.isalnum() or c in (' ', '_', '-')).strip() or "video"
-        ext = "mp3" if selected_format == "audio" else "mp4"
+        ext = "mp3" if mode == "audio" else "mp4"
 
-        stream_req = requests.get(media_url, stream=True, timeout=25)
+        # Stream chunk piping
+        stream_req = requests.get(media_url, stream=True, timeout=30)
 
         def generate():
             for chunk in stream_req.iter_content(chunk_size=1024 * 512):
