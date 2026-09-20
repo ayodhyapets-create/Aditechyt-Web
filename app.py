@@ -11,7 +11,7 @@ HTML_PAGE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aditechyt - Video & Reels Downloader</title>
+    <title>ADITECHYT Downloader</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
@@ -22,9 +22,6 @@ HTML_PAGE = """
         .header p { color: #fff; font-size: 16px; font-weight: 600; opacity: 0.9; }
         .container { flex: 1; display: flex; justify-content: center; align-items: flex-start; padding: 20px; }
         .card { background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); padding: 35px 25px; border-radius: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.1); width: 100%; max-width: 550px; }
-        .platforms { display: flex; justify-content: center; gap: 15px; margin-bottom: 25px; }
-        .platform-btn { background: #f1f4f8; border: none; border-radius: 12px; width: 50px; height: 50px; display: flex; justify-content: center; align-items: center; font-size: 24px; cursor: pointer; color: #7f8c8d; }
-        .platform-btn.active { color: #ff0000; background: #ffebeb; }
         .input-group { position: relative; margin-bottom: 25px; }
         input[type="text"] { width: 100%; padding: 20px; border: 2px solid #e1e5eb; border-radius: 16px; font-size: 16px; background: #fff; outline: none; }
         input[type="text"]:focus { border-color: #6c5ce7; }
@@ -46,18 +43,12 @@ HTML_PAGE = """
     </div>
     <div class="container">
         <div class="card">
-            <div class="platforms">
-                <button type="button" class="platform-btn active"><i class="fab fa-youtube"></i></button>
-            </div>
-
             {% if not video_info %}
             <form action="/preview" method="POST">
                 <div class="input-group">
                     <input type="text" name="url" placeholder="🔗 Paste YouTube link here..." required>
                 </div>
-                <button type="submit" class="btn-dl">
-                    <i class="fa-solid fa-magnifying-glass"></i> Get Video Details
-                </button>
+                <button type="submit" class="btn-dl"><i class="fa-solid fa-magnifying-glass"></i> Get Video Details</button>
             </form>
             {% else %}
             <div style="text-align:center; margin-bottom:25px;">
@@ -94,7 +85,6 @@ def get_base_opts():
         'geo_bypass': True,
         'no_warnings': True,
         'skip_download': True,
-        'format': None,
         'extractor_args': {
             'youtube': {
                 'player_client': ['web', 'mweb']
@@ -121,6 +111,7 @@ def preview():
     try:
         opts = get_base_opts()
         with yt_dlp.YoutubeDL(opts) as ydl:
+            # process=False se format validation bypass hoti hai
             info = ydl.extract_info(url, download=False, process=False)
 
         video_info = {
@@ -142,46 +133,52 @@ def stream():
 
     try:
         opts = get_base_opts()
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-
-        if not info:
-            return "Video info fetch nahi ho saki.", 500
-
-        formats = info.get('formats', [])
         
-        # Images, thumbnails aur sprites ko filter karein
-        valid_formats = [
+        # KEY FIX: process=False lagane se yt-dlp format match exception fekega hi nahi
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            raw_info = ydl.extract_info(url, download=False, process=False)
+
+        if not raw_info:
+            return "Video details fetch nahi ho saki.", 500
+
+        formats = raw_info.get('formats', [])
+        media_url = None
+
+        # Filter out image thumbnails/storyboards
+        clean_formats = [
             f for f in formats 
             if f.get('url') and not f.get('url', '').endswith(('.jpg', '.png', '.webp')) and 'ytimg.com' not in f.get('url', '')
         ]
 
-        media_url = None
-
         if mode == 'audio':
-            for f in reversed(valid_formats):
+            for f in reversed(clean_formats):
                 if f.get('vcodec') == 'none' and f.get('url'):
                     media_url = f['url']
                     break
         else:
-            # Video + Audio stream pick karein
-            for f in reversed(valid_formats):
+            for f in reversed(clean_formats):
                 if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
                     media_url = f['url']
                     break
 
-        if not media_url and valid_formats:
-            media_url = valid_formats[-1]['url']
+        # Fallback to any valid playable stream
+        if not media_url and clean_formats:
+            media_url = clean_formats[-1]['url']
 
         if not media_url:
-            media_url = info.get('url')
+            media_url = raw_info.get('url')
 
         if not media_url:
-            return "Failed to extract streaming stream from YouTube formats.", 500
+            # Agar format raw info mein nahi mila toh processed fallback
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                proc = ydl.process_ie_result(raw_info, download=False)
+                media_url = proc.get('url')
 
-        title = "".join(c for c in info.get('title', 'video') if c.isalnum() or c in (' ', '_', '-')).strip()
-        if not title:
-            title = "download"
+        if not media_url:
+            return "Direct stream URL nahi mil saka.", 500
+
+        raw_title = raw_info.get('title', 'video')
+        title = "".join(c for c in raw_title if c.isalnum() or c in (' ', '_', '-')).strip() or "download"
 
         req = urllib.request.Request(media_url, headers={
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
