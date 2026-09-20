@@ -3,6 +3,7 @@ import re
 import json
 import uuid
 import urllib.request
+import imageio_ffmpeg
 from flask import Flask, request, render_template_string, send_file, after_this_request
 import yt_dlp
 
@@ -11,6 +12,9 @@ app = Flask(__name__)
 # Temporary download directory
 DOWNLOAD_DIR = "/tmp/downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
+# Static FFmpeg binary ka path automatic detect karein
+FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
 
 HTML_PAGE = """
 <!DOCTYPE html>
@@ -46,7 +50,7 @@ HTML_PAGE = """
 <body>
     <div class="header">
         <h1>ADITECHYT</h1>
-        <p>FFmpeg Native Quality Downloader</p>
+        <p>FFmpeg Quality Downloader</p>
     </div>
     <div class="container">
         <div class="card">
@@ -130,11 +134,9 @@ def download():
     if not url:
         return render_template_string(HTML_PAGE, message="Missing URL")
 
-    # File identity
     job_id = str(uuid.uuid4())[:8]
     output_template = os.path.join(DOWNLOAD_DIR, f"{job_id}_%(title).50s.%(ext)s")
 
-    # Native ffmpeg format rules
     if target_quality == 'audio':
         format_rule = 'bestaudio/best'
         out_ext = 'mp3'
@@ -145,7 +147,6 @@ def download():
         }]
     else:
         req_h = target_quality
-        # Video + Audio merge via FFmpeg
         format_rule = f"bestvideo[height<={req_h}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={req_h}]+bestaudio/best[height<={req_h}]/best"
         out_ext = 'mp4'
         postprocessors = [{
@@ -158,6 +159,7 @@ def download():
         'no_warnings': True,
         'outtmpl': output_template,
         'format': format_rule,
+        'ffmpeg_location': FFMPEG_PATH,  # Pre-compiled static binary location
         'merge_output_format': 'mp4' if out_ext == 'mp4' else None,
         'postprocessors': postprocessors,
         'extractor_args': {
@@ -177,7 +179,6 @@ def download():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-        # Find downloaded file
         downloaded_files = [
             os.path.join(DOWNLOAD_DIR, f) 
             for f in os.listdir(DOWNLOAD_DIR) 
@@ -185,12 +186,11 @@ def download():
         ]
 
         if not downloaded_files:
-            return render_template_string(HTML_PAGE, message="FFmpeg processing failed to create output file.")
+            return render_template_string(HTML_PAGE, message="FFmpeg processing complete nahi ho saki.")
 
         target_file = downloaded_files[0]
         filename = os.path.basename(target_file).replace(f"{job_id}_", "")
 
-        # Auto cleanup temporary file after sending
         @after_this_request
         def cleanup(response):
             try:
@@ -208,7 +208,7 @@ def download():
         )
 
     except Exception as e:
-        return render_template_string(HTML_PAGE, message=f"FFmpeg Merge Error: {str(e)}")
+        return render_template_string(HTML_PAGE, message=f"FFmpeg Error: {str(e)}")
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 9500))
