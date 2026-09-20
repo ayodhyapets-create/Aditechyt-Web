@@ -121,7 +121,7 @@ def preview():
         return render_template_string(HTML_PAGE, message="Please enter a valid link.")
     try:
         opts = BASE_OPTS.copy()
-        opts['format'] = 'best'
+        # Preview ke liye format constraint poori tarah hata di hai
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
             
@@ -133,7 +133,6 @@ def preview():
         return render_template_string(HTML_PAGE, video_info=video_info)
     except Exception as e:
         print("PREVIEW ERROR:", str(e))
-        # Yeh line ab exact error ko screen par print kar degi
         return render_template_string(HTML_PAGE, message=f"Error: {str(e)}")
 
 @app.route('/download', methods=['POST'])
