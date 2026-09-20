@@ -3,7 +3,7 @@ import yt_dlp
 
 app = Flask(__name__)
 
-# ADITECHYT - COOKIES ENABLED CONFIGURATION
+# ADITECHYT - FIXED COOKIES CONFIGURATION
 HTML_PAGE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -95,16 +95,16 @@ HTML_PAGE = """
 </html>
 """
 
-# YDL options with cookies file enabled
+# Clean options compatible with cookies file
 COOKIE_OPTS = {
     'quiet': True,
     'noplaylist': True,
     'skip_download': True,
-    'cookiefile': 'cookies.txt',  # Yeh cookies file ko read karega
+    'cookiefile': 'cookies.txt',
     'geo_bypass': True,
     'extractor_args': {
         'youtube': {
-            'player_client': ['android', 'web']
+            'player_client': ['web']  # Web client cookies ke sath perfectly match hota hai
         }
     },
     'http_headers': {
@@ -132,14 +132,25 @@ def preview():
         return render_template_string(HTML_PAGE, video_info=video_info)
     except Exception as e:
         print("PREVIEW ERROR:", str(e))
-        return render_template_string(HTML_PAGE, message="Bot verification error or invalid link. Check logs.")
+        return render_template_string(HTML_PAGE, message="Error fetching video. Check link or cookies.")
 
 @app.route('/download', methods=['POST'])
 def download():
     url = request.form.get('url', '').strip()
+    selected_format = request.form.get('format', 'best')
     try:
         opts = COOKIE_OPTS.copy()
-        opts['format'] = 'best'
+        
+        # Format mapping for direct stream link
+        if selected_format == '1080p':
+            opts['format'] = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]'
+        elif selected_format == '720p':
+            opts['format'] = 'bestvideo[height<=720]+bestaudio/best[height<=720]'
+        elif selected_format == 'mp3':
+            opts['format'] = 'bestaudio/best'
+        else:
+            opts['format'] = 'best'
+
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
             stream_url = info.get('url') or (info.get('formats')[-1].get('url') if 'formats' in info else '')
@@ -152,7 +163,7 @@ def download():
         return render_template_string(HTML_PAGE, video_info=video_info, direct_link=stream_url)
     except Exception as e:
         print("DOWNLOAD ERROR:", str(e))
-        return render_template_string(HTML_PAGE, message="Error generating stream link.")
+        return render_template_string(HTML_PAGE, message="Requested format not available or restricted.")
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=9500, debug=False)
