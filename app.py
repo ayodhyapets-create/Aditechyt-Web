@@ -94,6 +94,7 @@ HTML_PAGE = """
 </html>
 """
 
+# Sabse safe options bina kisi strict format restriction ke
 BASE_OPTS = {
     'quiet': True,
     'noplaylist': True,
@@ -120,12 +121,7 @@ def preview():
     if not url:
         return render_template_string(HTML_PAGE, message="Please enter a valid link.")
     try:
-        opts = BASE_OPTS.copy()
-        # Preview ke liye format restriction bilkul hata di hai taaki error na aaye
-        if 'format' in opts:
-            del opts['format']
-            
-        with yt_dlp.YoutubeDL(opts) as ydl:
+        with yt_dlp.YoutubeDL(BASE_OPTS) as ydl:
             info = ydl.extract_info(url, download=False)
             
         video_info = {
@@ -141,20 +137,9 @@ def preview():
 @app.route('/download', methods=['POST'])
 def download():
     url = request.form.get('url', '').strip()
-    selected_format = request.form.get('format', 'best')
     try:
-        opts = BASE_OPTS.copy()
-        
-        if selected_format == '1080p':
-            opts['format'] = 'best[height<=1080][vcodec!=none][acodec!=none]/best[height<=1080]/best'
-        elif selected_format == '720p':
-            opts['format'] = 'best[height<=720][vcodec!=none][acodec!=none]/best[height<=720]/best'
-        elif selected_format == 'mp3':
-            opts['format'] = 'bestaudio/best'
-        else:
-            opts['format'] = 'best[vcodec!=none][acodec!=none]/best'
-
-        with yt_dlp.YoutubeDL(opts) as ydl:
+        # Yahan koi bhi strict format nahi lagaya, jo available hoga seedha utha lega
+        with yt_dlp.YoutubeDL(BASE_OPTS) as ydl:
             info = ydl.extract_info(url, download=False)
             stream_url = info.get('url') or (info.get('formats')[-1].get('url') if 'formats' in info else '')
             
