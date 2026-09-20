@@ -95,19 +95,20 @@ HTML_PAGE = """
 </html>
 """
 
+# Native pure yt-dlp config (Bypass format-hiding on Datacenters)
 BASE_OPTS = {
     'quiet': True,
     'noplaylist': True,
     'skip_download': True,
     'geo_bypass': True,
+    'ignoreerrors': True,
     'extractor_args': {
         'youtube': {
-            'player_client': ['web']
+            'player_client': ['tv_embedded', 'android_creator', 'web']
         }
     },
     'http_headers': {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
     }
 }
 
@@ -124,7 +125,9 @@ def preview():
     if not url:
         return render_template_string(HTML_PAGE, message="Please enter a valid link.")
     try:
-        with yt_dlp.YoutubeDL(BASE_OPTS) as ydl:
+        opts = BASE_OPTS.copy()
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            # Metadata fetch without strict stream extraction
             info = ydl.extract_info(url, download=False, process=False)
             
         video_info = {
@@ -134,8 +137,7 @@ def preview():
         }
         return render_template_string(HTML_PAGE, video_info=video_info)
     except Exception as e:
-        print("PREVIEW ERROR:", str(e))
-        return render_template_string(HTML_PAGE, message=f"Error: {str(e)}")
+        return render_template_string(HTML_PAGE, message=f"Preview Error: {str(e)}")
 
 @app.route('/download', methods=['POST'])
 def download():
@@ -144,28 +146,29 @@ def download():
     try:
         opts = BASE_OPTS.copy()
         
-        # Format selector string matching available progressive or merged streams
-        if selected_format == '1080p':
-            opts['format'] = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best'
+        # Pure yt-dlp format selector: Progressive streams or standalone audio
+        if selected_format == 'mp3':
+            opts['format'] = 'bestaudio[ext=m4a]/bestaudio/best'
         elif selected_format == '720p':
-            opts['format'] = 'bestvideo[height<=720]+bestaudio/best[height<=720]/best'
-        elif selected_format == 'mp3':
-            opts['format'] = 'ba/bestaudio/best'
+            opts['format'] = 'best[height<=720][vcodec!=none][acodec!=none]/best[height<=720]/best'
+        elif selected_format == '1080p':
+            opts['format'] = 'best[height<=1080][vcodec!=none][acodec!=none]/best[height<=1080]/best'
         else:
-            opts['format'] = 'bv*+ba/b'
+            opts['format'] = 'best[vcodec!=none][acodec!=none]/best'
 
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            stream_url = info.get('url')
             
+            # Agar format selection fail ho jaye toh direct format list scan karein
+            stream_url = info.get('url')
             if not stream_url and 'formats' in info:
-                # Url list se direct playable format pick karein
-                valid = [f['url'] for f in info['formats'] if f.get('url')]
-                if valid:
-                    stream_url = valid[-1]
+                # Direct working url find karein
+                available = [f['url'] for f in info['formats'] if f.get('url')]
+                if available:
+                    stream_url = available[-1]
 
         if not stream_url:
-            return render_template_string(HTML_PAGE, message="No direct stream URL generated.")
+            return render_template_string(HTML_PAGE, message="No direct stream found. YouTube restricted direct extraction for this URL.")
 
         video_info = {
             'title': info.get('title', 'YouTube Video'),
@@ -174,7 +177,6 @@ def download():
         }
         return render_template_string(HTML_PAGE, video_info=video_info, direct_link=stream_url)
     except Exception as e:
-        print("DOWNLOAD ERROR:", str(e))
         return render_template_string(HTML_PAGE, message=f"Download Error: {str(e)}")
 
 if __name__ == '__main__':
