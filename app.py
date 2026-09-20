@@ -3,7 +3,7 @@ import yt_dlp
 
 app = Flask(__name__)
 
-# ADITECHYT - STABLE PREVIEW CONFIGURATION
+# ADITECHYT - FIXED STREAM FORMAT CONFIGURATION
 HTML_PAGE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -95,12 +95,80 @@ HTML_PAGE = """
 </html>
 """
 
-# Base options with cookies
 BASE_OPTS = {
     'quiet': True,
     'noplaylist': True,
     'skip_download': True,
     'cookiefile': 'cookies.txt',
+    'geo_bypass': True,
+    'extractor_args': {
+        'youtube': {
+            'player_client': ['web']
+        }
+    },
+    'http_headers': {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    }
+}
+
+@app.route('/', methods=['GET'])
+def index():
+    return render_template_string(HTML_PAGE)
+
+@app.route('/preview', methods=['POST'])
+def preview():
+    url = request.form.get('url', '').strip()
+    if not url:
+        return render_template_string(HTML_PAGE, message="Please enter a valid link.")
+    try:
+        opts = BASE_OPTS.copy()
+        opts['format'] = 'best'
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            
+        video_info = {
+            'title': info.get('title', 'Unknown Title'),
+            'thumbnail': info.get('thumbnail', ''),
+            'url': url
+        }
+        return render_template_string(HTML_PAGE, video_info=video_info)
+    except Exception as e:
+        print("PREVIEW ERROR:", str(e))
+        return render_template_string(HTML_PAGE, message="Error fetching video details. Check link.")
+
+@app.route('/download', methods=['POST'])
+def download():
+    url = request.form.get('url', '').strip()
+    selected_format = request.form.get('format', 'best')
+    try:
+        opts = BASE_OPTS.copy()
+        
+        # Ffmpeg ki zarurat na pade isliye combined formats ko target kiya hai
+        if selected_format == '1080p':
+            opts['format'] = 'best[height<=1080][vcodec!=none][acodec!=none]/best[height<=1080]/best'
+        elif selected_format == '720p':
+            opts['format'] = 'best[height<=720][vcodec!=none][acodec!=none]/best[height<=720]/best'
+        elif selected_format == 'mp3':
+            opts['format'] = 'bestaudio/best'
+        else:
+            opts['format'] = 'best[vcodec!=none][acodec!=none]/best'
+
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            stream_url = info.get('url') or (info.get('formats')[-1].get('url') if 'formats' in info else '')
+            
+        video_info = {
+            'title': info.get('title', 'Unknown Title'),
+            'thumbnail': info.get('thumbnail', ''),
+            'url': url
+        }
+        return render_template_string(HTML_PAGE, video_info=video_info, direct_link=stream_url)
+    except Exception as e:
+        print("DOWNLOAD ERROR:", str(e))
+        return render_template_string(HTML_PAGE, message="Requested format not available.")
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=9500, debug=False)
     'geo_bypass': True,
     'extractor_args': {
         'youtube': {
