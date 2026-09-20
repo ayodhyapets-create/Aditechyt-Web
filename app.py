@@ -33,7 +33,7 @@ HTML_PAGE = """
         .quality-grid span { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px 10px; background: #f8f9fa; border: 2px solid transparent; border-radius: 12px; font-size: 14.5px; font-weight: 600; color: #7f8c8d; }
         .quality-grid input[type="radio"]:checked + span { background: #f0edff; border-color: #6c5ce7; color: #6c5ce7; }
         button.btn-dl { width: 100%; padding: 20px; background: linear-gradient(135deg,#6c5ce7,#a29bfe); color: white; border: none; border-radius: 16px; font-size: 18px; font-weight: 800; cursor: pointer; box-shadow: 0 10px 20px rgba(108,92,231,0.3); }
-        .msg { margin-top: 20px; padding: 15px; border-radius: 12px; font-weight: 600; text-align: center; font-size: 14px; background: #fee2e2; color: #e74c3c; border: 1px solid #f87171; }
+        .msg { margin-top: 20px; padding: 15px; border-radius: 12px; font-weight: 600; text-align: center; font-size: 14px; background: #fee2e2; color: #e74c3c; border: 1px solid #f87171; word-break: break-all; }
         footer { background: rgba(0,0,0,0.2); color: white; text-align: center; padding: 20px; margin-top: auto; }
     </style>
 </head>
@@ -133,7 +133,8 @@ def preview():
         return render_template_string(HTML_PAGE, video_info=video_info)
     except Exception as e:
         print("PREVIEW ERROR:", str(e))
-        return render_template_string(HTML_PAGE, message="Error fetching video details. Check link.")
+        # Yeh line ab exact error ko screen par print kar degi
+        return render_template_string(HTML_PAGE, message=f"Error: {str(e)}")
 
 @app.route('/download', methods=['POST'])
 def download():
@@ -163,7 +164,7 @@ def download():
         return render_template_string(HTML_PAGE, video_info=video_info, direct_link=stream_url)
     except Exception as e:
         print("DOWNLOAD ERROR:", str(e))
-        return render_template_string(HTML_PAGE, message="Requested format not available.")
+        return render_template_string(HTML_PAGE, message=f"Download Error: {str(e)}")
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=9500, debug=False)
