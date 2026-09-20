@@ -1,5 +1,5 @@
 import os
-import io
+import urllib.request
 from flask import Flask, request, render_template_string, Response, stream_with_context
 import yt_dlp
 
@@ -42,7 +42,7 @@ HTML_PAGE = """
 <body>
     <div class="header">
         <h1>ADITECHYT</h1>
-        <p>Self-Hosted Video & Reels Downloader</p>
+        <p>Direct Video & Reels Downloader</p>
     </div>
     <div class="container">
         <div class="card">
@@ -70,9 +70,9 @@ HTML_PAGE = """
                 <span class="quality-title">Select Format:</span>
                 <div class="quality-grid">
                     <label><input type="radio" name="format" value="video" checked><span><i class="fa-solid fa-video"></i> MP4 Video</span></label>
-                    <label><input type="radio" name="format" value="audio"><span><i class="fa-solid fa-music"></i> MP3 / Audio</span></label>
+                    <label><input type="radio" name="format" value="audio"><span><i class="fa-solid fa-music"></i> MP3 Audio</span></label>
                 </div>
-                <button type="submit" class="btn-dl"><i class="fa-solid fa-download"></i> Download Directly</button>
+                <button type="submit" class="btn-dl"><i class="fa-solid fa-download"></i> Start Download</button>
                 <a href="/" style="display:block; text-align:center; margin-top:15px; color:#6c5ce7; font-weight:600; text-decoration:none;"><i class="fa-solid fa-arrow-left"></i> Paste another link</a>
             </form>
             {% endif %}
@@ -93,7 +93,8 @@ def get_base_opts():
         'noplaylist': True,
         'geo_bypass': True,
         'no_warnings': True,
-        # Strictly self-hosted fallback client
+        'skip_download': True,
+        'format': None,
         'extractor_args': {
             'youtube': {
                 'player_client': ['web', 'mweb']
@@ -119,9 +120,7 @@ def preview():
         return render_template_string(HTML_PAGE, message="Please enter a valid link.")
     try:
         opts = get_base_opts()
-        opts['skip_download'] = True
         with yt_dlp.YoutubeDL(opts) as ydl:
-            # Metadata bina format resolution crash ke uthao
             info = ydl.extract_info(url, download=False, process=False)
 
         video_info = {
@@ -143,30 +142,55 @@ def stream():
 
     try:
         opts = get_base_opts()
-        # Direct stream: Single file progressive format force karein taaki merging na karni pade
-        if mode == 'audio':
-            opts['format'] = 'ba/b'
-        else:
-            opts['format'] = 'b[ext=mp4]/best[ext=mp4]/best'
-
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            media_url = info.get('url')
-            title = info.get('title', 'download').replace('/', '_')
+
+        if not info:
+            return "Video info fetch nahi ho saki.", 500
+
+        formats = info.get('formats', [])
+        
+        # Images, thumbnails aur sprites ko filter karein
+        valid_formats = [
+            f for f in formats 
+            if f.get('url') and not f.get('url', '').endswith(('.jpg', '.png', '.webp')) and 'ytimg.com' not in f.get('url', '')
+        ]
+
+        media_url = None
+
+        if mode == 'audio':
+            for f in reversed(valid_formats):
+                if f.get('vcodec') == 'none' and f.get('url'):
+                    media_url = f['url']
+                    break
+        else:
+            # Video + Audio stream pick karein
+            for f in reversed(valid_formats):
+                if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
+                    media_url = f['url']
+                    break
+
+        if not media_url and valid_formats:
+            media_url = valid_formats[-1]['url']
 
         if not media_url:
-            return "Failed to extract streaming stream from YouTube.", 500
+            media_url = info.get('url')
 
-        # Self-pipe: Server khud stream fetch karke user ko dega (Zero IP Block)
-        import urllib.request
+        if not media_url:
+            return "Failed to extract streaming stream from YouTube formats.", 500
+
+        title = "".join(c for c in info.get('title', 'video') if c.isalnum() or c in (' ', '_', '-')).strip()
+        if not title:
+            title = "download"
+
         req = urllib.request.Request(media_url, headers={
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
         })
 
         def generate():
             with urllib.request.urlopen(req) as resp:
                 while True:
-                    chunk = resp.read(1024 * 512)  # 512KB chunks
+                    chunk = resp.read(1024 * 512)
                     if not chunk:
                         break
                     yield chunk
