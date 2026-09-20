@@ -3,7 +3,7 @@ import yt_dlp
 
 app = Flask(__name__)
 
-# ADITECHYT V5.3 - FULLY UPDATED STABLE BACKEND (NO COOKIES / BYPASS CONFIG)
+# ADITECHYT - COOKIES ENABLED CONFIGURATION
 HTML_PAGE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -95,21 +95,20 @@ HTML_PAGE = """
 </html>
 """
 
-# Optimized YDL options to bypass cloud blocks without cookies
-BYPASS_OPTS = {
+# YDL options with cookies file enabled
+COOKIE_OPTS = {
     'quiet': True,
     'noplaylist': True,
     'skip_download': True,
+    'cookiefile': 'cookies.txt',  # Yeh cookies file ko read karega
     'geo_bypass': True,
     'extractor_args': {
         'youtube': {
-            'player_client': ['android_embedded', 'android', 'web']
+            'player_client': ['android', 'web']
         }
     },
     'http_headers': {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     }
 }
 
@@ -123,7 +122,7 @@ def preview():
     if not url:
         return render_template_string(HTML_PAGE, message="Please enter a valid link.")
     try:
-        with yt_dlp.YoutubeDL(BYPASS_OPTS) as ydl:
+        with yt_dlp.YoutubeDL(COOKIE_OPTS) as ydl:
             info = ydl.extract_info(url, download=False)
         video_info = {
             'title': info.get('title', 'Unknown Title'),
@@ -133,13 +132,13 @@ def preview():
         return render_template_string(HTML_PAGE, video_info=video_info)
     except Exception as e:
         print("PREVIEW ERROR:", str(e))
-        return render_template_string(HTML_PAGE, message="Invalid Link or Blocked by YouTube. Try full URL.")
+        return render_template_string(HTML_PAGE, message="Bot verification error or invalid link. Check logs.")
 
 @app.route('/download', methods=['POST'])
 def download():
     url = request.form.get('url', '').strip()
     try:
-        opts = BYPASS_OPTS.copy()
+        opts = COOKIE_OPTS.copy()
         opts['format'] = 'best'
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
