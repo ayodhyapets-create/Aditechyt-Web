@@ -70,7 +70,7 @@ HTML_PAGE = """
                 <div class="quality-grid">
                     <label><input type="radio" name="format" value="best" checked><span><i class="fa-solid fa-star"></i> Best Quality</span></label>
                     <label><input type="radio" name="format" value="720p"><span><i class="fa-solid fa-mobile-screen"></i> 720p / 360p</span></label>
-                    <label><input type="radio" name="format" value="mp3"><span><i class="fa-solid fa-music"></i> MP3 Audio</span></label>
+                    <label><input type="radio" name="format" value="mp3"><span><i class="fa-solid fa-music"></i> Audio Stream</span></label>
                 </div>
                 <button type="submit" class="btn-dl"><i class="fa-solid fa-download"></i> Get Direct Stream Link</button>
                 <a href="/" style="display:block; text-align:center; margin-top:15px; color:#6c5ce7; font-weight:600; text-decoration:none;"><i class="fa-solid fa-arrow-left"></i> Paste another link</a>
@@ -94,7 +94,7 @@ HTML_PAGE = """
 </html>
 """
 
-# Yeh configuration Render ki datacenter IP par formats hide hone se rokti hai
+# Native client setup: Android client completely unblocks formats on Datacenters
 BASE_OPTS = {
     'quiet': True,
     'noplaylist': True,
@@ -102,11 +102,11 @@ BASE_OPTS = {
     'geo_bypass': True,
     'extractor_args': {
         'youtube': {
-            'player_client': ['web_embedded', 'android_music']
+            'player_client': ['android', 'ios']
         }
     },
     'http_headers': {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        'User-Agent': 'com.google.android.youtube/19.09.37 (Linux; U; Android 11; en_US) gzip',
     }
 }
 
@@ -143,33 +143,31 @@ def download():
             info = ydl.extract_info(url, download=False)
             
         if not info:
-            return render_template_string(HTML_PAGE, message="Failed to extract video details.")
+            return render_template_string(HTML_PAGE, message="Extraction failed. YouTube returned no response.")
 
         formats = info.get('formats', [])
         stream_url = None
 
         if selected_format == 'mp3':
-            # Audio-only stream
+            # Audio format
             for f in reversed(formats):
                 if f.get('vcodec') == 'none' and f.get('acodec') != 'none' and f.get('url'):
                     stream_url = f['url']
                     break
         elif selected_format == '720p':
-            # 720p ya progressive stream
             for f in reversed(formats):
                 h = f.get('height')
                 if h and h <= 720 and f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
                     stream_url = f['url']
                     break
 
-        # Best / Fallback stream
+        # Best / Combined fallback
         if not stream_url:
             for f in reversed(formats):
                 if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
                     stream_url = f['url']
                     break
 
-        # Any valid media url
         if not stream_url:
             for f in reversed(formats):
                 if f.get('url'):
@@ -180,7 +178,7 @@ def download():
             stream_url = info.get('url')
 
         if not stream_url:
-            return render_template_string(HTML_PAGE, message="No playable stream available for this video.")
+            return render_template_string(HTML_PAGE, message="No playable direct URL returned by YouTube.")
 
         video_info = {
             'title': info.get('title', 'YouTube Video'),
