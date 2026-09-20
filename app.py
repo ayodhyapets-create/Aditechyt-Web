@@ -87,7 +87,6 @@ def get_base_ydl_opts():
         'geo_bypass': True,
         'no_warnings': True,
         'skip_download': True,
-        # Format selector ko explicitly 'all' set karein taaki yt-dlp format match exception throw na kare
         'format': 'all',
         'extractor_args': {
             'youtube': {
@@ -135,63 +134,71 @@ def stream():
 
     try:
         opts = get_base_ydl_opts()
-        # 'format': 'all' rakha hai taaki missing format error trigger na ho
-        opts['format'] = 'all'
-
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
 
         formats = info.get('formats', [])
-        
-        # Sirf actual audio/video media URLs filter karein (thumbnails hatayein)
-        valid = [
-            f for f in formats 
-            if f.get('url') and 'googlevideo.com' in f.get('url')
-        ]
+
+        # STRICT FILTER: Storyboard (sb0, sb1...), images aur mhtml ko bahar nikalo
+        valid = []
+        for f in formats:
+            fid = str(f.get('format_id', ''))
+            furl = f.get('url', '')
+            ext = f.get('ext', '')
+
+            # Storyboard ya static image formats skip
+            if fid.startswith('sb') or 'storyboard' in furl.lower():
+                continue
+            if ext in ['mhtml', 'jpg', 'jpeg', 'png', 'webp']:
+                continue
+            if 'ytimg.com' in furl:
+                continue
+            if not furl:
+                continue
+
+            valid.append(f)
 
         media_url = None
 
         if selected_format == 'audio':
             for f in reversed(valid):
-                if f.get('vcodec') == 'none' and f.get('acodec') != 'none':
+                if f.get('vcodec') == 'none' and f.get('acodec') not in ['none', None]:
                     media_url = f['url']
                     break
         elif selected_format in ['720', '360']:
             target = int(selected_format)
             for f in reversed(valid):
-                if f.get('height') and f['height'] <= target and f.get('vcodec') != 'none' and f.get('acodec') != 'none':
+                h = f.get('height') or 0
+                if h <= target and f.get('vcodec') not in ['none', None] and f.get('acodec') not in ['none', None]:
                     media_url = f['url']
                     break
 
-        # Progressive fallback
+        # Progressive video+audio stream fallback
         if not media_url:
             for f in reversed(valid):
-                if f.get('vcodec') != 'none' and f.get('acodec') != 'none':
+                if f.get('vcodec') not in ['none', None] and f.get('acodec') not in ['none', None]:
                     media_url = f['url']
                     break
 
-        # Any video stream fallback
+        # Video stream fallback (agar combined na mile)
         if not media_url:
             for f in reversed(valid):
-                if f.get('vcodec') != 'none':
+                if f.get('vcodec') not in ['none', None]:
                     media_url = f['url']
                     break
 
+        # Aakhri safe valid stream
         if not media_url and valid:
             media_url = valid[-1]['url']
 
         if not media_url:
-            media_url = info.get('url')
-
-        if not media_url:
-            return "Media stream URL nahi mil saka.", 500
+            return "Real playable stream nahi mil saki.", 500
 
         raw_title = info.get('title', 'video')
         title = "".join(c for c in raw_title if c.isalnum() or c in (' ', '_', '-')).strip() or "video"
         ext = "mp3" if selected_format == "audio" else "mp4"
 
-        # Direct chunk streaming via requests
-        stream_req = requests.get(media_url, stream=True, timeout=20)
+        stream_req = requests.get(media_url, stream=True, timeout=25)
 
         def generate():
             for chunk in stream_req.iter_content(chunk_size=1024 * 512):
