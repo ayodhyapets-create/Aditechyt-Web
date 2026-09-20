@@ -93,25 +93,23 @@ HTML_PAGE = """
 </html>
 """
 
-BASE_OPTS = {
+# Yeh jugad YouTube ko test client aur mobile web dikhata hai
+YOUTUBE_BYPASS_OPTS = {
     'quiet': True,
     'noplaylist': True,
     'skip_download': True,
     'geo_bypass': True,
-    'no_color': True,
+    'no_warnings': True,
     'extractor_args': {
         'youtube': {
-            'player_client': ['web']
+            'player_client': ['android_testsuite', 'mweb'],
+            'player_skip': ['webpage', 'configs']
         }
     },
     'http_headers': {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
     }
 }
-
-if os.path.exists('cookies.txt'):
-    BASE_OPTS['cookiefile'] = 'cookies.txt'
 
 @app.route('/', methods=['GET'])
 def index():
@@ -123,12 +121,11 @@ def preview():
     if not url:
         return render_template_string(HTML_PAGE, message="Please enter a valid link.")
     try:
-        opts = BASE_OPTS.copy()
-        with yt_dlp.YoutubeDL(opts) as ydl:
+        with yt_dlp.YoutubeDL(YOUTUBE_BYPASS_OPTS) as ydl:
             info = ydl.extract_info(url, download=False, process=False)
             
         if not info:
-            return render_template_string(HTML_PAGE, message="Video details nahi mil saki.")
+            return render_template_string(HTML_PAGE, message="Video details fetch nahi ho saki.")
 
         video_info = {
             'title': info.get('title', 'YouTube Video'),
@@ -144,10 +141,8 @@ def download():
     url = request.form.get('url', '').strip()
     selected_format = request.form.get('format', 'best')
     try:
-        # YAHAN SE 'format' SELECTOR PURA REMOVE KIYA HAI
-        # Isse yt-dlp format match fail nahi kar sakta
-        opts = BASE_OPTS.copy()
-        opts['format'] = 'all/best'
+        opts = YOUTUBE_BYPASS_OPTS.copy()
+        opts['format'] = 'all'
 
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -159,19 +154,17 @@ def download():
         stream_url = None
 
         if selected_format == 'mp3':
-            # Audio format filter
             for f in reversed(formats):
                 if f.get('vcodec') == 'none' and f.get('url'):
                     stream_url = f['url']
                     break
         else:
-            # Video + Audio progressive link dhoondo
+            # Video + Audio stream dhoondo
             for f in reversed(formats):
                 if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
                     stream_url = f['url']
                     break
 
-        # Fallback: Koi bhi playable stream jo available ho
         if not stream_url:
             for f in reversed(formats):
                 if f.get('url'):
@@ -182,7 +175,7 @@ def download():
             stream_url = info.get('url')
 
         if not stream_url:
-            return render_template_string(HTML_PAGE, message="Stream URL nahi mil paya.")
+            return render_template_string(HTML_PAGE, message="Direct stream URL nahi mil saka.")
 
         video_info = {
             'title': info.get('title', 'YouTube Video'),
