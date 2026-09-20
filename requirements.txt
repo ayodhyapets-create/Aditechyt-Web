@@ -1,4 +1,4 @@
-Flask
-yt-dlp
+flask
+yt-dlp>=2024.03.10
 gunicorn
 imageio-ffmpeg
