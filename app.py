@@ -69,7 +69,7 @@ HTML_PAGE = """
                 <span class="quality-title">Select Format & Quality:</span>
                 <div class="quality-grid">
                     <label><input type="radio" name="format" value="best" checked><span><i class="fa-solid fa-star"></i> Best Quality</span></label>
-                    <label><input type="radio" name="format" value="720p"><span><i class="fa-solid fa-mobile-screen"></i> 720p Video</span></label>
+                    <label><input type="radio" name="format" value="720p"><span><i class="fa-solid fa-mobile-screen"></i> 720p / Standard</span></label>
                     <label><input type="radio" name="format" value="360p"><span><i class="fa-solid fa-film"></i> 360p Video</span></label>
                     <label><input type="radio" name="format" value="mp3"><span><i class="fa-solid fa-music"></i> Audio Stream</span></label>
                 </div>
@@ -146,45 +146,54 @@ def download():
     selected_format = request.form.get('format', 'best')
     try:
         opts = BASE_OPTS.copy()
+        # Sabse important: Kisi bhi format string ko pass mat karo jisse error aana band ho jaye
+        opts['format'] = None
+
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
             
         if not info:
-            return render_template_string(HTML_PAGE, message="Extraction failed. YouTube returned no response.")
+            return render_template_string(HTML_PAGE, message="Extraction failed. YouTube returned no info.")
 
         formats = info.get('formats', [])
         stream_url = None
 
+        # 1. MP3 Audio
         if selected_format == 'mp3':
-            # Audio streams
             for f in reversed(formats):
                 if f.get('vcodec') == 'none' and f.get('acodec') != 'none' and f.get('url'):
                     stream_url = f['url']
                     break
-        elif selected_format == '360p':
-            for f in formats:
-                if f.get('height') == 360 and f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
-                    stream_url = f['url']
-                    break
-        elif selected_format == '720p':
+
+        # 2. Specific resolutions (360p / 720p)
+        elif selected_format in ['360p', '720p']:
+            target_h = 360 if selected_format == '360p' else 720
+            # Progressive stream dhoondo
             for f in reversed(formats):
-                if f.get('height') and f['height'] <= 720 and f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
+                h = f.get('height')
+                if h and h <= target_h and f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
                     stream_url = f['url']
                     break
 
-        # Fallback: Agar specific na mile toh pehla combined stream uthao
+        # 3. Best Quality (Combined progressive stream)
         if not stream_url:
             for f in reversed(formats):
                 if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
                     stream_url = f['url']
                     break
 
-        # Aakhri fallback: direct url field
+        # 4. Fallback: Koi bhi playable URL
+        if not stream_url:
+            for f in reversed(formats):
+                if f.get('url'):
+                    stream_url = f['url']
+                    break
+
         if not stream_url:
             stream_url = info.get('url')
 
         if not stream_url:
-            return render_template_string(HTML_PAGE, message="No direct video link found in formats list.")
+            return render_template_string(HTML_PAGE, message="Direct stream URL not found in format list.")
 
         video_info = {
             'title': info.get('title', 'YouTube Video'),
