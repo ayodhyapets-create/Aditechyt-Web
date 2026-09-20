@@ -1,4 +1,7 @@
 import os
+import json
+import re
+import urllib.request
 import requests
 from flask import Flask, request, render_template_string, Response, stream_with_context
 import yt_dlp
@@ -61,7 +64,7 @@ HTML_PAGE = """
                 <span class="quality-title">Choose Download Type:</span>
                 <div class="quality-grid">
                     <label><input type="radio" name="format" value="video" checked><span><i class="fa-solid fa-video"></i> Full MP4 Video</span></label>
-                    <label><input type="radio" name="format" value="audio"><span><i class="fa-solid fa-music"></i> Audio Only (MP3)</span></label>
+                    <label><input type="radio" name="format" value="audio"><span><i class="fa-solid fa-music"></i> Audio (MP3)</span></label>
                 </div>
                 <button type="submit" class="btn-dl"><i class="fa-solid fa-download"></i> Download Directly</button>
                 <a href="/" style="display:block; text-align:center; margin-top:15px; color:#6c5ce7; font-weight:600; text-decoration:none;"><i class="fa-solid fa-arrow-left"></i> Paste another link</a>
@@ -78,22 +81,9 @@ HTML_PAGE = """
 </html>
 """
 
-def get_base_ydl_opts():
-    return {
-        'quiet': True,
-        'noplaylist': True,
-        'geo_bypass': True,
-        'no_warnings': True,
-        'skip_download': True,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android', 'ios']
-            }
-        },
-        'http_headers': {
-            'User-Agent': 'com.google.android.youtube/19.10.37 (Linux; U; Android 11; en_US) gzip',
-        }
-    }
+def extract_video_id(url):
+    match = re.search(r"(?:v=|/|youtu\.be/|shorts/)([a-zA-Z0-9_-]{11})", url)
+    return match.group(1) if match else None
 
 @app.route('/', methods=['GET'])
 def index():
@@ -102,21 +92,29 @@ def index():
 @app.route('/preview', methods=['POST'])
 def preview():
     url = request.form.get('url', '').strip()
-    if not url:
-        return render_template_string(HTML_PAGE, message="Please enter a URL.")
+    v_id = extract_video_id(url)
+    if not v_id:
+        return render_template_string(HTML_PAGE, message="Invalid YouTube URL.")
+    
+    # Official oEmbed: Isme kabhie bot-detection ya login issue nahi aata
+    title = "YouTube Video"
     try:
-        opts = get_base_ydl_opts()
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=False, process=False)
+        req = urllib.request.Request(
+            f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={v_id}&format=json",
+            headers={'User-Agent': 'Mozilla/5.0'}
+        )
+        res = json.loads(urllib.request.urlopen(req, timeout=5).read().decode())
+        title = res.get('title', title)
+    except Exception:
+        pass
 
-        video_info = {
-            'title': info.get('title', 'YouTube Video'),
-            'thumbnail': info.get('thumbnail') or f"https://i.ytimg.com/vi/{info.get('id')}/hqdefault.jpg",
-            'url': url
-        }
-        return render_template_string(HTML_PAGE, video_info=video_info)
-    except Exception as e:
-        return render_template_string(HTML_PAGE, message=f"Preview Error: {str(e)}")
+    video_info = {
+        'id': v_id,
+        'title': title,
+        'thumbnail': f"https://i.ytimg.com/vi/{v_id}/hqdefault.jpg",
+        'url': url
+    }
+    return render_template_string(HTML_PAGE, video_info=video_info)
 
 @app.route('/stream', methods=['GET'])
 def stream():
@@ -127,37 +125,71 @@ def stream():
         return "Missing URL", 400
 
     try:
-        opts = get_base_ydl_opts()
-        
-        # Audio ke liye direct best audio, Video ke liye single progressive format (Audio+Video sath me)
-        if mode == 'audio':
-            opts['format'] = 'ba/bestaudio[ext=m4a]/bestaudio'
-        else:
-            opts['format'] = 'b[ext=mp4]/best[vcodec!=none][acodec!=none]/18/22/best'
+        ydl_opts = {
+            'quiet': True,
+            'noplaylist': True,
+            'geo_bypass': True,
+            'skip_download': True,
+            'no_warnings': True,
+            'format': 'all',
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android', 'ios']
+                }
+            },
+            'http_headers': {
+                'User-Agent': 'com.google.android.youtube/19.10.37 (Linux; U; Android 11; en_US) gzip',
+            }
+        }
+        if os.path.exists('cookies.txt'):
+            ydl_opts['cookiefile'] = 'cookies.txt'
 
-        with yt_dlp.YoutubeDL(opts) as ydl:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
 
-        media_url = info.get('url')
+        formats = info.get('formats', [])
+        
+        # Real media streams filter (storyboards aur static images ko strictly exclude karein)
+        valid_streams = []
+        for f in formats:
+            fid = str(f.get('format_id', ''))
+            furl = f.get('url', '')
+            ext = f.get('ext', '')
+            if fid.startswith('sb') or 'storyboard' in furl.lower() or 'ytimg.com' in furl:
+                continue
+            if ext in ['mhtml', 'jpg', 'png', 'webp']:
+                continue
+            if furl and 'googlevideo.com' in furl:
+                valid_streams.append(f)
 
-        # Fallback: formats array me se direct googlevideo stream nikaalein
-        if not media_url and 'formats' in info:
-            for f in reversed(info['formats']):
-                u = f.get('url', '')
-                fid = str(f.get('format_id', ''))
-                # Storyboard aur images ko ignore karein
-                if not fid.startswith('sb') and 'googlevideo.com' in u and f.get('vcodec') != 'none':
-                    media_url = u
+        media_url = None
+
+        if mode == 'audio':
+            for f in reversed(valid_streams):
+                if f.get('vcodec') == 'none' and f.get('acodec') not in ['none', None]:
+                    media_url = f['url']
+                    break
+        else:
+            # Combined progressive video + audio
+            for f in reversed(valid_streams):
+                if f.get('vcodec') not in ['none', None] and f.get('acodec') not in ['none', None]:
+                    media_url = f['url']
                     break
 
+        if not media_url and valid_streams:
+            media_url = valid_streams[-1]['url']
+
         if not media_url:
-            return "Playable stream link nahi mila.", 500
+            media_url = info.get('url')
+
+        if not media_url:
+            return "Downloadable media stream nahi mil saki.", 500
 
         raw_title = info.get('title', 'video')
         title = "".join(c for c in raw_title if c.isalnum() or c in (' ', '_', '-')).strip() or "video"
         ext = "mp3" if mode == "audio" else "mp4"
 
-        # Stream chunk piping
+        # Direct chunk pipe
         stream_req = requests.get(media_url, stream=True, timeout=30)
 
         def generate():
