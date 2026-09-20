@@ -1,12 +1,16 @@
 import os
-import json
 import re
+import json
+import uuid
 import urllib.request
-import requests
-from flask import Flask, request, render_template_string, Response, stream_with_context
+from flask import Flask, request, render_template_string, send_file, after_this_request
 import yt_dlp
 
 app = Flask(__name__)
+
+# Temporary download directory
+DOWNLOAD_DIR = "/tmp/downloads"
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 HTML_PAGE = """
 <!DOCTYPE html>
@@ -42,7 +46,7 @@ HTML_PAGE = """
 <body>
     <div class="header">
         <h1>ADITECHYT</h1>
-        <p>Direct Stream Downloader</p>
+        <p>FFmpeg Native Quality Downloader</p>
     </div>
     <div class="container">
         <div class="card">
@@ -59,14 +63,17 @@ HTML_PAGE = """
                 <h3 style="font-size:15px; color:#2c3e50; font-weight:800;">{{ video_info.title }}</h3>
             </div>
 
-            <form action="/stream" method="GET">
+            <form action="/download" method="POST">
                 <input type="hidden" name="url" value="{{ video_info.url }}">
-                <span class="quality-title">Choose Download Type:</span>
+                <span class="quality-title">Choose Desired Quality:</span>
                 <div class="quality-grid">
-                    <label><input type="radio" name="format" value="video" checked><span><i class="fa-solid fa-video"></i> Full MP4 Video</span></label>
-                    <label><input type="radio" name="format" value="audio"><span><i class="fa-solid fa-music"></i> Audio (MP3)</span></label>
+                    <label><input type="radio" name="format" value="1080"><span><i class="fa-solid fa-star"></i> 1080p FHD</span></label>
+                    <label><input type="radio" name="format" value="720" checked><span><i class="fa-solid fa-tv"></i> 720p HD</span></label>
+                    <label><input type="radio" name="format" value="480"><span><i class="fa-solid fa-film"></i> 480p SD</span></label>
+                    <label><input type="radio" name="format" value="360"><span><i class="fa-solid fa-mobile-screen"></i> 360p Low</span></label>
+                    <label style="grid-column: span 2;"><input type="radio" name="format" value="audio"><span><i class="fa-solid fa-music"></i> MP3 / Audio</span></label>
                 </div>
-                <button type="submit" class="btn-dl"><i class="fa-solid fa-download"></i> Download Directly</button>
+                <button type="submit" class="btn-dl"><i class="fa-solid fa-download"></i> Process & Download</button>
                 <a href="/" style="display:block; text-align:center; margin-top:15px; color:#6c5ce7; font-weight:600; text-decoration:none;"><i class="fa-solid fa-arrow-left"></i> Paste another link</a>
             </form>
             {% endif %}
@@ -95,8 +102,7 @@ def preview():
     v_id = extract_video_id(url)
     if not v_id:
         return render_template_string(HTML_PAGE, message="Invalid YouTube URL.")
-    
-    # Official oEmbed: Isme kabhie bot-detection ya login issue nahi aata
+
     title = "YouTube Video"
     try:
         req = urllib.request.Request(
@@ -116,96 +122,93 @@ def preview():
     }
     return render_template_string(HTML_PAGE, video_info=video_info)
 
-@app.route('/stream', methods=['GET'])
-def stream():
-    url = request.args.get('url', '').strip()
-    mode = request.args.get('format', 'video')
+@app.route('/download', methods=['POST'])
+def download():
+    url = request.form.get('url', '').strip()
+    target_quality = request.form.get('format', '720')
 
     if not url:
-        return "Missing URL", 400
+        return render_template_string(HTML_PAGE, message="Missing URL")
+
+    # File identity
+    job_id = str(uuid.uuid4())[:8]
+    output_template = os.path.join(DOWNLOAD_DIR, f"{job_id}_%(title).50s.%(ext)s")
+
+    # Native ffmpeg format rules
+    if target_quality == 'audio':
+        format_rule = 'bestaudio/best'
+        out_ext = 'mp3'
+        postprocessors = [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }]
+    else:
+        req_h = target_quality
+        # Video + Audio merge via FFmpeg
+        format_rule = f"bestvideo[height<={req_h}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={req_h}]+bestaudio/best[height<={req_h}]/best"
+        out_ext = 'mp4'
+        postprocessors = [{
+            'key': 'FFmpegVideoRemuxer',
+            'preferedformat': 'mp4',
+        }]
+
+    ydl_opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'outtmpl': output_template,
+        'format': format_rule,
+        'merge_output_format': 'mp4' if out_ext == 'mp4' else None,
+        'postprocessors': postprocessors,
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'ios']
+            }
+        },
+        'http_headers': {
+            'User-Agent': 'com.google.android.youtube/19.10.37 (Linux; U; Android 11; en_US) gzip',
+        }
+    }
+
+    if os.path.exists('cookies.txt'):
+        ydl_opts['cookiefile'] = 'cookies.txt'
 
     try:
-        ydl_opts = {
-            'quiet': True,
-            'noplaylist': True,
-            'geo_bypass': True,
-            'skip_download': True,
-            'no_warnings': True,
-            'format': 'all',
-            'extractor_args': {
-                'youtube': {
-                    'player_client': ['android', 'ios']
-                }
-            },
-            'http_headers': {
-                'User-Agent': 'com.google.android.youtube/19.10.37 (Linux; U; Android 11; en_US) gzip',
-            }
-        }
-        if os.path.exists('cookies.txt'):
-            ydl_opts['cookiefile'] = 'cookies.txt'
-
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
+            ydl.download([url])
 
-        formats = info.get('formats', [])
-        
-        # Real media streams filter (storyboards aur static images ko strictly exclude karein)
-        valid_streams = []
-        for f in formats:
-            fid = str(f.get('format_id', ''))
-            furl = f.get('url', '')
-            ext = f.get('ext', '')
-            if fid.startswith('sb') or 'storyboard' in furl.lower() or 'ytimg.com' in furl:
-                continue
-            if ext in ['mhtml', 'jpg', 'png', 'webp']:
-                continue
-            if furl and 'googlevideo.com' in furl:
-                valid_streams.append(f)
+        # Find downloaded file
+        downloaded_files = [
+            os.path.join(DOWNLOAD_DIR, f) 
+            for f in os.listdir(DOWNLOAD_DIR) 
+            if f.startswith(job_id)
+        ]
 
-        media_url = None
+        if not downloaded_files:
+            return render_template_string(HTML_PAGE, message="FFmpeg processing failed to create output file.")
 
-        if mode == 'audio':
-            for f in reversed(valid_streams):
-                if f.get('vcodec') == 'none' and f.get('acodec') not in ['none', None]:
-                    media_url = f['url']
-                    break
-        else:
-            # Combined progressive video + audio
-            for f in reversed(valid_streams):
-                if f.get('vcodec') not in ['none', None] and f.get('acodec') not in ['none', None]:
-                    media_url = f['url']
-                    break
+        target_file = downloaded_files[0]
+        filename = os.path.basename(target_file).replace(f"{job_id}_", "")
 
-        if not media_url and valid_streams:
-            media_url = valid_streams[-1]['url']
+        # Auto cleanup temporary file after sending
+        @after_this_request
+        def cleanup(response):
+            try:
+                if os.path.exists(target_file):
+                    os.remove(target_file)
+            except Exception:
+                pass
+            return response
 
-        if not media_url:
-            media_url = info.get('url')
-
-        if not media_url:
-            return "Downloadable media stream nahi mil saki.", 500
-
-        raw_title = info.get('title', 'video')
-        title = "".join(c for c in raw_title if c.isalnum() or c in (' ', '_', '-')).strip() or "video"
-        ext = "mp3" if mode == "audio" else "mp4"
-
-        # Direct chunk pipe
-        stream_req = requests.get(media_url, stream=True, timeout=30)
-
-        def generate():
-            for chunk in stream_req.iter_content(chunk_size=1024 * 512):
-                if chunk:
-                    yield chunk
-
-        return Response(
-            stream_with_context(generate()),
-            content_type="video/mp4" if ext == "mp4" else "audio/mpeg",
-            headers={
-                "Content-Disposition": f'attachment; filename="{title}.{ext}"'
-            }
+        return send_file(
+            target_file,
+            as_attachment=True,
+            download_name=filename,
+            mimetype="video/mp4" if out_ext == "mp4" else "audio/mpeg"
         )
+
     except Exception as e:
-        return f"Stream Extraction Error: {str(e)}", 500
+        return render_template_string(HTML_PAGE, message=f"FFmpeg Merge Error: {str(e)}")
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 9500))
