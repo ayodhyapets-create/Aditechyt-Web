@@ -121,9 +121,10 @@ def preview():
         return render_template_string(HTML_PAGE, message="Please enter a valid link.")
     try:
         opts = BASE_OPTS.copy()
-        # Preview ke liye aisi format setting jo bina ffmpeg ke seedha chal jaye
-        opts['format'] = 'b[vcodec!=none][acodec!=none]/b / wv*+ba/w'
-        
+        # Preview ke liye format restriction bilkul hata di hai taaki error na aaye
+        if 'format' in opts:
+            del opts['format']
+            
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
             
