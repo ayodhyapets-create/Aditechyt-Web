@@ -68,9 +68,8 @@ HTML_PAGE = """
                 <input type="hidden" name="url" value="{{ video_info.url }}">
                 <span class="quality-title">Select Format & Quality:</span>
                 <div class="quality-grid">
-                    <label><input type="radio" name="format" value="best" checked><span><i class="fa-solid fa-star"></i> Best Quality</span></label>
-                    <label><input type="radio" name="format" value="720p"><span><i class="fa-solid fa-mobile-screen"></i> 720p / 360p</span></label>
-                    <label><input type="radio" name="format" value="mp3"><span><i class="fa-solid fa-music"></i> MP3 Audio</span></label>
+                    <label><input type="radio" name="format" value="best" checked><span><i class="fa-solid fa-star"></i> Video Stream</span></label>
+                    <label><input type="radio" name="format" value="mp3"><span><i class="fa-solid fa-music"></i> Audio Stream</span></label>
                 </div>
                 <button type="submit" class="btn-dl"><i class="fa-solid fa-download"></i> Get Direct Stream Link</button>
                 <a href="/" style="display:block; text-align:center; margin-top:15px; color:#6c5ce7; font-weight:600; text-decoration:none;"><i class="fa-solid fa-arrow-left"></i> Paste another link</a>
@@ -80,7 +79,7 @@ HTML_PAGE = """
             {% if direct_link %}
             <div style="margin-top:20px; text-align:center; background:#f0edff; padding:15px; border-radius:12px;">
                 <p style="font-weight:600; margin-bottom:10px; color:#6c5ce7;">Your link is ready!</p>
-                <a href="{{ direct_link }}" target="_blank" class="btn-dl" style="text-decoration:none; display:inline-block; padding:12px 20px; font-size:15px;">Open / Download Stream</a>
+                <a href="{{ direct_link }}" target="_blank" rel="noopener noreferrer" class="btn-dl" style="text-decoration:none; display:inline-block; padding:12px 20px; font-size:15px;">Open / Download Stream</a>
             </div>
             {% endif %}
 
@@ -94,27 +93,25 @@ HTML_PAGE = """
 </html>
 """
 
-def get_ydl_options():
-    opts = {
-        'quiet': True,
-        'noplaylist': True,
-        'skip_download': True,
-        'geo_bypass': True,
-        'nocheckcertificate': True,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['web_creator', 'web'],
-                'player_skip': ['webpage', 'configs']
-            }
-        },
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-            'Accept-Language': 'en-US,en;q=0.9',
+BASE_OPTS = {
+    'quiet': True,
+    'noplaylist': True,
+    'skip_download': True,
+    'geo_bypass': True,
+    'no_color': True,
+    'extractor_args': {
+        'youtube': {
+            'player_client': ['web']
         }
+    },
+    'http_headers': {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
     }
-    if os.path.exists('cookies.txt'):
-        opts['cookiefile'] = 'cookies.txt'
-    return opts
+}
+
+if os.path.exists('cookies.txt'):
+    BASE_OPTS['cookiefile'] = 'cookies.txt'
 
 @app.route('/', methods=['GET'])
 def index():
@@ -126,12 +123,12 @@ def preview():
     if not url:
         return render_template_string(HTML_PAGE, message="Please enter a valid link.")
     try:
-        opts = get_ydl_options()
+        opts = BASE_OPTS.copy()
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False, process=False)
             
         if not info:
-            return render_template_string(HTML_PAGE, message="Could not fetch video info.")
+            return render_template_string(HTML_PAGE, message="Video details nahi mil saki.")
 
         video_info = {
             'title': info.get('title', 'YouTube Video'),
@@ -147,37 +144,34 @@ def download():
     url = request.form.get('url', '').strip()
     selected_format = request.form.get('format', 'best')
     try:
-        opts = get_ydl_options()
-        # Format selector ko none rakhein taaki yt-dlp format missing exception na throw kare
-        opts['format'] = None
+        # YAHAN SE 'format' SELECTOR PURA REMOVE KIYA HAI
+        # Isse yt-dlp format match fail nahi kar sakta
+        opts = BASE_OPTS.copy()
+        opts['format'] = 'all/best'
 
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            
+
         if not info:
-            return render_template_string(HTML_PAGE, message="Video extract nahi ho payi.")
+            return render_template_string(HTML_PAGE, message="Extraction fail ho gayi.")
 
         formats = info.get('formats', [])
         stream_url = None
 
         if selected_format == 'mp3':
+            # Audio format filter
             for f in reversed(formats):
-                if f.get('vcodec') == 'none' and f.get('acodec') != 'none' and f.get('url'):
+                if f.get('vcodec') == 'none' and f.get('url'):
                     stream_url = f['url']
                     break
-        elif selected_format == '720p':
-            for f in reversed(formats):
-                h = f.get('height')
-                if h and h <= 720 and f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
-                    stream_url = f['url']
-                    break
-
-        if not stream_url:
+        else:
+            # Video + Audio progressive link dhoondo
             for f in reversed(formats):
                 if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
                     stream_url = f['url']
                     break
 
+        # Fallback: Koi bhi playable stream jo available ho
         if not stream_url:
             for f in reversed(formats):
                 if f.get('url'):
@@ -188,7 +182,7 @@ def download():
             stream_url = info.get('url')
 
         if not stream_url:
-            return render_template_string(HTML_PAGE, message="Playable link nahi mila. YouTube is URL ko protect kar raha hai.")
+            return render_template_string(HTML_PAGE, message="Stream URL nahi mil paya.")
 
         video_info = {
             'title': info.get('title', 'YouTube Video'),
