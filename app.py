@@ -2,13 +2,9 @@ from flask import Flask, request, render_template_string, send_file, make_respon
 import yt_dlp
 import os
 import glob
-import threading
-import time
 import tempfile
 
 app = Flask(__name__)
-
-# ADITECHYT V9.2 - ANDROID CLIENT STABLE CONFIG
 
 HTML_PAGE = """
 <!DOCTYPE html>
@@ -16,7 +12,7 @@ HTML_PAGE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aditechyt - Video & Reels Downloader</title>
+    <title>Aditechyt - Video Downloader</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
@@ -74,7 +70,7 @@ HTML_PAGE = """
 <body>
     <div class="header">
         <h1>ADITECHYT</h1>
-        <p>Premium Video & Reels Downloader</p>
+        <p>Premium Video Downloader</p>
     </div>
     <div class="container">
         <div class="card">
@@ -99,8 +95,8 @@ HTML_PAGE = """
                 <span class="quality-title">Select Format & Quality:</span>
                 <div class="quality-grid">
                     <label><input type="radio" name="format" value="best" checked><span><i class="fa-solid fa-star"></i> Best Quality</span></label>
-                    <label><input type="radio" name="format" value="1080p"><span><i class="fa-solid fa-display"></i> 1080p Video</span></label>
-                    <label><input type="radio" name="format" value="720p"><span><i class="fa-solid fa-mobile-screen"></i> 720p Video</span></label>
+                    <label><input type="radio" name="format" value="1080p"><span><i class="fa-solid fa-display"></i> 1080p HD</span></label>
+                    <label><input type="radio" name="format" value="720p"><span><i class="fa-solid fa-mobile-screen"></i> 720p HD</span></label>
                     <label><input type="radio" name="format" value="mp3"><span><i class="fa-solid fa-music"></i> MP3 Audio</span></label>
                 </div>
                 <button id="dl-btn" type="submit" class="btn-dl"><i class="fa-solid fa-download"></i> Download Now</button>
@@ -133,10 +129,6 @@ HTML_PAGE = """
 
 def get_opts():
     opts = {
-        'extractor_args': {'youtube': {'player_client': ['android']}},
-        'http_headers': {
-            'User-Agent': 'com.google.android.youtube/19.29.35 (Linux; U; Android 14; Build/UP1A.231005.007)',
-        },
         'geo_bypass': True,
         'nocheckcertificate': True,
         'quiet': True,
@@ -175,7 +167,7 @@ def preview():
         return render_template_string(HTML_PAGE, video_info=video_info)
     except Exception as e:
         print("ERROR:", str(e))
-        return render_template_string(HTML_PAGE, message="Failed to fetch video. Please check your link or cookies.")
+        return render_template_string(HTML_PAGE, message="Error fetching video details. Check link or cookies.")
 
 @app.route('/download', methods=['POST'])
 def download():
@@ -191,15 +183,16 @@ def download():
     ydl_opts = get_opts()
     ydl_opts['outtmpl'] = temp_dir + '/%(title)s.%(ext)s'
 
+    # Flexible format mapping with fallback
     if fmt == 'mp3':
         ydl_opts['format'] = 'bestaudio/best'
         ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
     elif fmt == '1080p':
-        ydl_opts['format'] = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best'
+        ydl_opts['format'] = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/bv*+ba/b'
     elif fmt == '720p':
-        ydl_opts['format'] = 'bestvideo[height<=720]+bestaudio/best[height<=720]/best'
+        ydl_opts['format'] = 'bestvideo[height<=720]+bestaudio/best[height<=720]/bv*+ba/b'
     else:
-        ydl_opts['format'] = 'best/bestvideo+bestaudio'
+        ydl_opts['format'] = 'bv*+ba/b'
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -214,7 +207,7 @@ def download():
             return render_template_string(HTML_PAGE, message="Download failed. Try another format.")
     except Exception as e:
         print("DOWNLOAD ERROR:", str(e))
-        return render_template_string(HTML_PAGE, message="Download error. Try a different format.")
+        return render_template_string(HTML_PAGE, message="Download error. Try a different video format.")
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 9700))
