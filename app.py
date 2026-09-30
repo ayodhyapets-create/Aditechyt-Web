@@ -127,7 +127,8 @@ HTML_PAGE = """
 
 def get_opts():
     opts = {
-        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
+        # Advanced Client Spoofing to bypass Datacenter IP blocking
+        'extractor_args': {'youtube': {'player_client': ['ios', 'tv', 'web_embedded']}},
         'geo_bypass': True,
         'nocheckcertificate': True,
         'quiet': True,
@@ -166,7 +167,7 @@ def preview():
         return render_template_string(HTML_PAGE, video_info=video_info)
     except Exception as e:
         print("ERROR:", str(e))
-        return render_template_string(HTML_PAGE, message="Error fetching video details. Check link.")
+        return render_template_string(HTML_PAGE, message="Error fetching video details. Try another link.")
 
 @app.route('/download', methods=['POST'])
 def download():
