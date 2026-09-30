@@ -8,8 +8,8 @@ import random
 
 app = Flask(__name__)
 
-# ADITECHYT V5.5 - SMART TV OAUTH2 & ANTI-IP BLOCKING INTEGRATED
-# Port 9700 + Preview + Qualities + How To Use + Success Popup
+# ADITECHYT V6.0 - RENDER CLOUD SERVER OPTIMIZED
+# Dynamic Port + iOS/Android API Bypass + HD Thumbnails
 
 HTML_PAGE = """
 <!DOCTYPE html>
@@ -1280,34 +1280,32 @@ HTML_PAGE = """
 """
 
 # --------------------------------------------------
-# ANTI-IP BLOCK & OAUTH2 CONFIGURATION
+# RENDER CLOUD SERVER ANTI-BLOCK OPTIONS
 # --------------------------------------------------
 
-CACHE_DIR = os.path.join(os.getcwd(), 'yt_cache')
-if not os.path.exists(CACHE_DIR):
-    os.makedirs(CACHE_DIR)
-
 USER_AGENTS = [
-    'Mozilla/5.0 (SMART-TV; Linux; Tizen 5.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/5.0 TV Safari/538.1',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15'
+    'com.google.ios.youtube/19.05.7 (iPhone16,2; U; CPU iOS 17_3_1 like Mac OS X; en_US)',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1',
+    'Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.230 Mobile Safari/537.36'
 ]
 
 def get_anti_block_opts():
-    """Smart TV OAuth2 client and IP bypass configuration."""
+    """Render Cloud Datacenter IPs ke liye YouTube iOS/Android API spoofing."""
     return {
-        'username': 'oauth2',
-        'password': '',
-        'cachedir': CACHE_DIR,
-        'extractor_args': {'youtube': ['client=tv']},
+        'extractor_args': {
+            'youtube': [
+                'player_client=ios,android,web_creator',
+                'player_skip=configs',
+                'skip=webpage'
+            ]
+        },
         'http_headers': {
             'User-Agent': random.choice(USER_AGENTS),
             'Accept-Language': 'en-US,en;q=0.9',
         },
         'sleep_interval_requests': 1,
-        'sleep_interval': 2,
-        'max_sleep_interval': 5,
-        'extractor_retries': 3,
+        'sleep_interval': 1,
+        'extractor_retries': 5,
         'quiet': True,
         'noplaylist': True
     }
@@ -1356,7 +1354,7 @@ def preview():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
 
-        # High Quality Thumbnail Resolution Selection
+        # High Quality Thumbnail Selection
         thumbnails = info.get('thumbnails', [])
         best_thumbnail = ""
         if thumbnails:
@@ -1380,7 +1378,7 @@ def preview():
         print("PREVIEW ERROR:", str(e))
         return render_template_string(
             HTML_PAGE,
-            message="Invalid Link, Private Video, or IP issue. Please try again."
+            message="Invalid Link or IP Temporarily Rate-Limited. Please try again."
         )
 
 
@@ -1403,7 +1401,7 @@ def download():
     if not os.path.exists(temp_dir):
         os.makedirs(temp_dir)
 
-    # Remove old files
+    # Clean previous temp files
     for f in glob.glob(f"{temp_dir}/*"):
         try:
             if os.path.isfile(f):
@@ -1483,12 +1481,14 @@ def download():
 
 
 # --------------------------------------------------
-# START SERVER
+# START SERVER (RENDER COMPATIBLE)
 # --------------------------------------------------
 
 if __name__ == '__main__':
+    # Render dynamic port configuration
+    port = int(os.environ.get('PORT', 9700))
     app.run(
         host='0.0.0.0',
-        port=9700,
+        port=port,
         debug=False
     )
