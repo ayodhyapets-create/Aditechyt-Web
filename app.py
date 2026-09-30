@@ -9,7 +9,7 @@ import tempfile
 
 app = Flask(__name__)
 
-# ADITECHYT V7.5 - RENDER COOKIES & JS CHALLENGE BYPASS
+# ADITECHYT V8.0 - ANDROID CLIENT SPOOFING & JS CHALLENGE BYPASS
 
 HTML_PAGE = """
 <!DOCTYPE html>
@@ -203,15 +203,15 @@ HTML_PAGE = """
 """
 
 # --------------------------------------------------
-# YOUTUBE OPTIONS & JS CHALLENGE BYPASS
+# YOUTUBE OPTIONS & BYPASS CONFIG
 # --------------------------------------------------
 
 def get_anti_block_opts():
     opts = {
         'extractor_args': {
             'youtube': [
-                'player_client=android,web',
-                'player_skip=js,configs,webpage',
+                'player_client=android',
+                'player_skip=js,configs',
                 'skip=webpage'
             ]
         },
@@ -226,7 +226,7 @@ def get_anti_block_opts():
         'noplaylist': True
     }
 
-    # Environment Variable से Cookies पढ़ना
+    # Environment Variable se Cookies Read karna
     cookie_content = os.environ.get('YOUTUBE_COOKIES', '').strip()
     if cookie_content:
         if '\\n' in cookie_content:
