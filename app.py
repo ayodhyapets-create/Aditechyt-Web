@@ -166,7 +166,7 @@ def preview():
         return render_template_string(HTML_PAGE, video_info=video_info)
     except Exception as e:
         print("ERROR:", str(e))
-        return render_template_string(HTML_PAGE, message="Error fetching video details. Check link or cookies.")
+        return render_template_string(HTML_PAGE, message="Error fetching video details. Check link.")
 
 @app.route('/download', methods=['POST'])
 def download():
@@ -182,7 +182,6 @@ def download():
     ydl_opts = get_opts()
     ydl_opts['outtmpl'] = temp_dir + '/%(title)s.%(ext)s'
 
-    # Foolproof bypass format for datacenter IP restrictions
     if fmt == 'mp3':
         ydl_opts['format'] = 'bestaudio/best'
         ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
@@ -205,5 +204,5 @@ def download():
         return render_template_string(HTML_PAGE, message="Download error. Try another link.")
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 9700))
+    port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port, debug=False)
