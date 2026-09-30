@@ -94,7 +94,7 @@ HTML_PAGE = """
                 <input type="hidden" name="url" value="{{ video_info.url }}">
                 <span class="quality-title">Select Format:</span>
                 <div class="quality-grid">
-                    <label><input type="radio" name="format" value="best" checked><span><i class="fa-solid fa-star"></i> Best Quality Video</span></label>
+                    <label><input type="radio" name="format" value="best" checked><span><i class="fa-solid fa-star"></i> Video Format</span></label>
                     <label><input type="radio" name="format" value="mp3"><span><i class="fa-solid fa-music"></i> MP3 Audio</span></label>
                 </div>
                 <button id="dl-btn" type="submit" class="btn-dl"><i class="fa-solid fa-download"></i> Download Now</button>
@@ -182,12 +182,12 @@ def download():
     ydl_opts = get_opts()
     ydl_opts['outtmpl'] = temp_dir + '/%(title)s.%(ext)s'
 
-    # Foolproof single-stream format selection to completely prevent merging errors
+    # Foolproof bypass format for datacenter IP restrictions
     if fmt == 'mp3':
         ydl_opts['format'] = 'bestaudio/best'
         ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
     else:
-        ydl_opts['format'] = 'b'
+        ydl_opts['format'] = 'best/worst'
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
