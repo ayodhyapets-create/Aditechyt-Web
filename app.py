@@ -129,6 +129,7 @@ HTML_PAGE = """
 
 def get_opts():
     opts = {
+        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
         'geo_bypass': True,
         'nocheckcertificate': True,
         'quiet': True,
@@ -183,7 +184,6 @@ def download():
     ydl_opts = get_opts()
     ydl_opts['outtmpl'] = temp_dir + '/%(title)s.%(ext)s'
 
-    # Flexible format mapping with fallback
     if fmt == 'mp3':
         ydl_opts['format'] = 'bestaudio/best'
         ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
