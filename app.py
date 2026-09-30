@@ -9,7 +9,7 @@ import tempfile
 
 app = Flask(__name__)
 
-# ADITECHYT V8.1 - INTERNAL JS INTERPRETER & ANDROID CLIENT CONFIG
+# ADITECHYT V8.2 - WEB CLIENT & JS CHALLENGE BYPASS CONFIG
 
 HTML_PAGE = """
 <!DOCTYPE html>
@@ -210,12 +210,12 @@ def get_anti_block_opts():
     opts = {
         'extractor_args': {
             'youtube': [
-                'player_client=android,web',
+                'player_client=web',
                 'player_skip=configs',
             ]
         },
         'http_headers': {
-            'User-Agent': 'com.google.android.youtube/19.29.35 (Linux; U; Android 14; Build/UP1A.231005.007)',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
         },
         'sleep_interval_requests': 1,
