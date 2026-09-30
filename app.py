@@ -92,11 +92,9 @@ HTML_PAGE = """
             </div>
             <form action="/download" method="POST" onsubmit="showLoading('download')">
                 <input type="hidden" name="url" value="{{ video_info.url }}">
-                <span class="quality-title">Select Format & Quality:</span>
+                <span class="quality-title">Select Format:</span>
                 <div class="quality-grid">
-                    <label><input type="radio" name="format" value="best" checked><span><i class="fa-solid fa-star"></i> Best Quality</span></label>
-                    <label><input type="radio" name="format" value="1080p"><span><i class="fa-solid fa-display"></i> 1080p HD</span></label>
-                    <label><input type="radio" name="format" value="720p"><span><i class="fa-solid fa-mobile-screen"></i> 720p HD</span></label>
+                    <label><input type="radio" name="format" value="best" checked><span><i class="fa-solid fa-star"></i> Best Quality Video</span></label>
                     <label><input type="radio" name="format" value="mp3"><span><i class="fa-solid fa-music"></i> MP3 Audio</span></label>
                 </div>
                 <button id="dl-btn" type="submit" class="btn-dl"><i class="fa-solid fa-download"></i> Download Now</button>
@@ -184,15 +182,12 @@ def download():
     ydl_opts = get_opts()
     ydl_opts['outtmpl'] = temp_dir + '/%(title)s.%(ext)s'
 
+    # Foolproof single-stream format selection to completely prevent merging errors
     if fmt == 'mp3':
         ydl_opts['format'] = 'bestaudio/best'
         ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
-    elif fmt == '1080p':
-        ydl_opts['format'] = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/bv*+ba/b'
-    elif fmt == '720p':
-        ydl_opts['format'] = 'bestvideo[height<=720]+bestaudio/best[height<=720]/bv*+ba/b'
     else:
-        ydl_opts['format'] = 'bv*+ba/b'
+        ydl_opts['format'] = 'b'
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -204,10 +199,10 @@ def download():
             response.set_cookie('dl_complete', 'true', max_age=60, httponly=False)
             return response
         else:
-            return render_template_string(HTML_PAGE, message="Download failed. Try another format.")
+            return render_template_string(HTML_PAGE, message="Download failed. Try again.")
     except Exception as e:
         print("DOWNLOAD ERROR:", str(e))
-        return render_template_string(HTML_PAGE, message="Download error. Try a different video format.")
+        return render_template_string(HTML_PAGE, message="Download error. Try another link.")
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 9700))
