@@ -135,20 +135,21 @@ def get_opts():
         'noplaylist': True
     }
     
-    # Proxy configuration support via Environment Variable
+    # Sirf Proxy URL handle karne ke liye alag se check
     proxy_url = os.environ.get('PROXY_URL', '').strip()
     if proxy_url:
         opts['proxy'] = proxy_url
 
-    # Cookie support via Environment Variable
+    # Sirf agar real cookies text ho tabhi file banayein
     cookie_content = os.environ.get('YOUTUBE_COOKIES', '').strip()
-    if cookie_content:
+    if cookie_content and not cookie_content.startswith('socks5://') and not cookie_content.startswith('http://'):
         if '\\n' in cookie_content:
             cookie_content = cookie_content.replace('\\n', '\n')
         cookie_file = os.path.join(tempfile.gettempdir(), 'yt_cookies.txt')
         with open(cookie_file, 'w', encoding='utf-8') as f:
             f.write(cookie_content)
         opts['cookiefile'] = cookie_file
+        
     return opts
 
 @app.route('/')
@@ -173,7 +174,7 @@ def preview():
         return render_template_string(HTML_PAGE, video_info=video_info)
     except Exception as e:
         print("ERROR:", str(e))
-        return render_template_string(HTML_PAGE, message="Error fetching video details. Check link or proxy settings.")
+        return render_template_string(HTML_PAGE, message="Error fetching video details. Check proxy settings.")
 
 @app.route('/download', methods=['POST'])
 def download():
@@ -208,7 +209,7 @@ def download():
             return render_template_string(HTML_PAGE, message="Download failed. Try again.")
     except Exception as e:
         print("DOWNLOAD ERROR:", str(e))
-        return render_template_string(HTML_PAGE, message="Download error. Check proxy or link.")
+        return render_template_string(HTML_PAGE, message="Download error. Check proxy.")
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
