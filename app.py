@@ -8,7 +8,7 @@ import tempfile
 
 app = Flask(__name__)
 
-# ADITECHYT V9.0 - ULTIMATE BYPASS CONFIG
+# ADITECHYT V9.1 - FULL QUALITY SELECTOR & ULTIMATE BYPASS CONFIG
 
 HTML_PAGE = """
 <!DOCTYPE html>
@@ -27,13 +27,6 @@ HTML_PAGE = """
         .header p { color: #fff; font-size: 16px; font-weight: 600; opacity: 0.9; }
         .container { flex: 1; display: flex; justify-content: center; align-items: flex-start; padding: 20px; }
         .card { background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); padding: 35px 25px; border-radius: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.1); width: 100%; max-width: 550px; }
-        .platforms { display: flex; justify-content: center; gap: 15px; margin-bottom: 25px; }
-        .platform-btn { background: #f1f4f8; border: none; border-radius: 12px; width: 50px; height: 50px; display: flex; justify-content: center; align-items: center; font-size: 24px; cursor: pointer; transition: 0.3s; color: #7f8c8d; }
-        .platform-btn:hover, .platform-btn.active { transform: translateY(-5px); box-shadow: 0 10px 15px rgba(0,0,0,0.05); }
-        .btn-yt.active { color: #ff0000; background: #ffebeb; }
-        .btn-ig.active { color: #E1306C; background: #fce4ec; }
-        .btn-fb.active { color: #1877F2; background: #e7f0fd; }
-        .btn-tw.active { color: #000000; background: #e8e8e8; }
         .input-group { position: relative; margin-bottom: 25px; }
         input[type="text"] { width: 100%; padding: 20px; border: 2px solid #e1e5eb; border-radius: 16px; font-size: 16px; transition: 0.3s; background: #fff; box-shadow: 0 4px 10px rgba(0,0,0,0.02); }
         input[type="text"]:focus { border-color: #6c5ce7; outline: none; box-shadow: 0 0 0 4px rgba(108,92,231,0.1); }
@@ -140,7 +133,6 @@ HTML_PAGE = """
 
 def get_opts():
     opts = {
-        'format': 'best',
         'extractor_args': {'youtube': {'player_client': ['web', 'mweb']}},
         'geo_bypass': True,
         'nocheckcertificate': True,
@@ -180,7 +172,7 @@ def preview():
         return render_template_string(HTML_PAGE, video_info=video_info)
     except Exception as e:
         print("ERROR:", str(e))
-        return render_template_string(HTML_PAGE, message="YouTube blocking detected. Try using a fresh Netscape cookie or short link.")
+        return render_template_string(HTML_PAGE, message="YouTube blocking detected. Please check your cookies variable.")
 
 @app.route('/download', methods=['POST'])
 def download():
@@ -195,13 +187,17 @@ def download():
 
     ydl_opts = get_opts()
     ydl_opts['outtmpl'] = f'{temp_dir}/%(title)s.%(ext)s'
+
+    # Quality Format Selector Logic
     if fmt == 'mp3':
         ydl_opts['format'] = 'bestaudio/best'
         ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
     elif fmt == '1080p':
-        ydl_opts['format'] = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]'
+        ydl_opts['format'] = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/bv*+ba/b'
     elif fmt == '720p':
-        ydl_opts['format'] = 'bestvideo[height<=720]+bestaudio/best[height<=720]'
+        ydl_opts['format'] = 'bestvideo[height<=720]+bestaudio/best[height<=720]/bv*+ba/b'
+    else:
+        ydl_opts['format'] = 'bv*+ba/b'
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -216,7 +212,7 @@ def download():
             return render_template_string(HTML_PAGE, message="Download failed. Try another format.")
     except Exception as e:
         print("DOWNLOAD ERROR:", str(e))
-        return render_template_string(HTML_PAGE, message="Error processing download. Please try again.")
+        return render_template_string(HTML_PAGE, message="Error processing download. Ensure FFmpeg is installed on Render.")
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 9700))
