@@ -1,6 +1,5 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
 
-# Server par ek sath FFmpeg aur Node.js install karna
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     nodejs \
