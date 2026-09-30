@@ -127,7 +127,6 @@ HTML_PAGE = """
 
 def get_opts():
     opts = {
-        # Advanced Client Spoofing to bypass Datacenter IP blocking
         'extractor_args': {'youtube': {'player_client': ['ios', 'tv', 'web_embedded']}},
         'geo_bypass': True,
         'nocheckcertificate': True,
@@ -135,6 +134,13 @@ def get_opts():
         'no_warnings': True,
         'noplaylist': True
     }
+    
+    # Proxy configuration support via Environment Variable
+    proxy_url = os.environ.get('PROXY_URL', '').strip()
+    if proxy_url:
+        opts['proxy'] = proxy_url
+
+    # Cookie support via Environment Variable
     cookie_content = os.environ.get('YOUTUBE_COOKIES', '').strip()
     if cookie_content:
         if '\\n' in cookie_content:
@@ -167,7 +173,7 @@ def preview():
         return render_template_string(HTML_PAGE, video_info=video_info)
     except Exception as e:
         print("ERROR:", str(e))
-        return render_template_string(HTML_PAGE, message="Error fetching video details. Try another link.")
+        return render_template_string(HTML_PAGE, message="Error fetching video details. Check link or proxy settings.")
 
 @app.route('/download', methods=['POST'])
 def download():
@@ -202,7 +208,7 @@ def download():
             return render_template_string(HTML_PAGE, message="Download failed. Try again.")
     except Exception as e:
         print("DOWNLOAD ERROR:", str(e))
-        return render_template_string(HTML_PAGE, message="Download error. Try another link.")
+        return render_template_string(HTML_PAGE, message="Download error. Check proxy or link.")
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
