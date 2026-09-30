@@ -3,6 +3,7 @@ import yt_dlp
 import os
 import glob
 import tempfile
+import urllib.parse
 
 app = Flask(__name__)
 
@@ -136,9 +137,21 @@ def get_opts():
         'socket_timeout': 30
     }
     
-    # Webshare Proxy Integration with proper parsing
+    # Webshare Proxy Parsing with Safe Quote Encoding
     proxy_url = os.environ.get('PROXY_URL', '').strip()
     if proxy_url:
+        try:
+            # Parse and safely encode credentials to prevent 407 auth errors
+            parsed = urllib.parse.urlparse(proxy_url)
+            if parsed.username and parsed.password:
+                encoded_username = urllib.parse.quote(parsed.username, safe='')
+                encoded_password = urllib.parse.quote(parsed.password, safe='')
+                host_port = parsed.netloc.split('@')[-1]
+                scheme = parsed.scheme if parsed.scheme else 'http'
+                proxy_url = f"{scheme}://{encoded_username}:{encoded_password}@{host_port}"
+        except Exception as e:
+            print("Proxy parsing error:", str(e))
+        
         opts['proxy'] = proxy_url
 
     return opts
@@ -165,7 +178,7 @@ def preview():
         return render_template_string(HTML_PAGE, video_info=video_info)
     except Exception as e:
         print("ERROR:", str(e))
-        return render_template_string(HTML_PAGE, message="Proxy connection failed. Check Webshare credentials.")
+        return render_template_string(HTML_PAGE, message="Webshare proxy authentication failed. Verify credentials in Render dashboard.")
 
 @app.route('/download', methods=['POST'])
 def download():
